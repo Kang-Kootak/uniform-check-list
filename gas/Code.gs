@@ -11,7 +11,7 @@ var HDR_R = ['학번', '이름', '학년', '반', '번호', '누적횟수', '최
 var HDR_L = ['기록ID', '일시', '학번', '이름', '학년', '반', '사유', '메모', '기록자'];
 var HDR_E = ['면제ID', '학번', '이름', '사유', '시작일', '종료일', '등록자', '등록일시'];
 var EXEMPT_LIMIT = 500;
-var DEF_REASONS = '교복 미착용, 생활복·사복 혼용, 명찰 미부착, 외투 규정 위반, 기타';
+var DEF_REASONS = '교복 미착용, 생활복·사복 혼용, 슬리퍼·크록스 착용, 기타';
 var LOG_LIMIT = 1000;      // 앱이 한 번에 받아가는 최근 기록 수
 var CFG_TTL = 30;          // 설정 캐시 (초). PIN을 바꾸면 최대 이만큼 뒤에 적용됩니다.
 
@@ -21,6 +21,8 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('교복 지도')
     .addItem('① 초기 설정 (시트 만들기)', '초기설정')
     .addItem('② 앱 주소 보기', '앱주소보기')
+    .addSeparator()
+    .addItem('적발 사유 기본값으로 되돌리기', '사유기본값')
     .addSeparator()
     .addItem('오늘 자료 백업 사본 만들기', '백업사본')
     .addItem('적발 기록만 초기화', '기록초기화')
@@ -89,6 +91,17 @@ function 앱주소보기() {
     return;
   }
   ui.alert('앱 주소\n\n' + url + '\n\n이 주소를 선도부원에게 공유하세요.\n휴대폰에서 열고 홈 화면에 추가하면 앱처럼 쓸 수 있습니다.');
+}
+
+function 사유기본값() {
+  var ui = SpreadsheetApp.getUi();
+  var res = ui.alert('적발 사유 기본값으로 되돌리기',
+    '[설정] 시트의 적발사유를 아래로 바꿉니다.\n\n' + DEF_REASONS +
+    '\n\n이미 기록된 자료는 그대로 유지됩니다. 계속할까요?',
+    ui.ButtonSet.YES_NO);
+  if (res !== ui.Button.YES) return;
+  saveReasons_(DEF_REASONS.split(',').map(function (v) { return v.trim(); }));
+  ui.alert('적발 사유를 바꿨습니다.\n\n' + DEF_REASONS + '\n\n앱에서 새로고침하면 반영됩니다.');
 }
 
 function 백업사본() {

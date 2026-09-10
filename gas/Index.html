@@ -495,7 +495,7 @@ var LS_CACHE="gyobok.cache.v2", LS_ME="gyobok.me", LS_PIN="gyobok.pin";
 var POLL_MS=20000, IDLE_MS=15*60*1000;
 
 /* ============ 상태 ============ */
-var students=new Map(), logs=[], exempts=[], reasons=["교복 미착용"], histCache={};
+var students=new Map(), logs=[], exempts=[], reasons=["교복 미착용","생활복·사복 혼용","슬리퍼·크록스 착용","기타"], histCache={};
 var role=null, pinSet=true, sheetUrl="", logLimit=1000, rev=0;
 var tab="check", period="all", klassFilter="all", shown=40;
 var busy=new Set(), forceOk=false, inflight=0, lastAct=Date.now(), syncedAt=null, booted=false;
