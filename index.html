@@ -177,6 +177,10 @@ ul{margin:0;padding:0;list-style:none}
 .rank .fill.w{background:var(--warn)}
 .rank .fill.c{background:var(--crit)}
 .rank .num{font-family:var(--font-mono);font-size:14px;font-weight:600;flex:none;font-variant-numeric:tabular-nums}
+.rank.slots li{padding:12px 14px}
+.rank.slots .track{height:8px;border-radius:4px;margin-top:7px}
+.rank.slots .num{font-size:15px}
+.rank.slots .num small{font-size:11.5px;font-weight:500;color:var(--muted);margin-left:2px;font-family:var(--font-ui)}
 
 /* ---------- forms & buttons ---------- */
 label.fl{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;letter-spacing:.02em}
@@ -215,8 +219,8 @@ textarea.inp{min-height:132px;resize:vertical;font-family:var(--font-mono);font-
   background:color-mix(in srgb,var(--surface) 92%,transparent);
   -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
   border-top:1px solid var(--line-2);padding-bottom:env(safe-area-inset-bottom)}
-.tabbar .in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr)}
-.tab{padding:9px 4px 10px;background:none;border:0;cursor:pointer;color:var(--muted);
+.tabbar .in{max-width:560px;margin:0 auto;display:flex;justify-content:center}
+.tab{flex:1;max-width:200px;padding:9px 4px 10px;background:none;border:0;cursor:pointer;color:var(--muted);
   display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600;letter-spacing:.02em}
 .tab svg{width:22px;height:22px}
 .tab[aria-selected="true"]{color:var(--accent-2)}
@@ -328,6 +332,10 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
       <div>
         <div class="sect-h" style="margin-bottom:8px"><h2>학급</h2></div>
         <div class="seg" id="classSeg"></div>
+      </div>
+      <div>
+        <div class="sect-h" style="margin-bottom:8px"><h2>시간대별</h2><span class="sub" id="slotSub"></span></div>
+        <div class="card"><ul class="rank slots" id="slotBreak"></ul></div>
       </div>
       <div>
         <div class="sect-h" style="margin-bottom:8px"><h2>누적 적발 순위</h2><span class="sub" id="rankSub"></span></div>
@@ -501,6 +509,30 @@ function checkNote(at, big){
     '<b>✓ '+whenToday(at)+' 체크됨</b>'+
     '<span class="sub">하루 한 번만 기록합니다. 오늘은 더 체크하지 않습니다.</span>'+
   '</div>';
+}
+/* 지도 시간대 — 아침(12시 전) · 점심(12~14시) · 그 외 */
+var SLOTS=[{k:"morning",name:"아침",sub:"12시 전"},{k:"lunch",name:"점심",sub:"12~14시"},{k:"other",name:"그 외",sub:"14시 이후"}];
+function slotOf(iso){
+  var h=new Date(iso).getHours();
+  return h<12 ? "morning" : (h<14 ? "lunch" : "other");
+}
+function slotRows(times){
+  var n={morning:0,lunch:0,other:0}, i;
+  for(i=0;i<times.length;i++) n[slotOf(times[i])]++;
+  var total=times.length;
+  if(!total) return '<li><div class="empty" style="width:100%"><strong>해당 기간 기록 없음</strong>기간이나 학급을 바꿔 보세요.</div></li>';
+  var max=Math.max(n.morning,n.lunch,n.other,1);
+  var rows=[];
+  for(i=0;i<SLOTS.length;i++){
+    var sl=SLOTS[i], v=n[sl.k];
+    if(sl.k==="other" && !v) continue;
+    var pct=Math.round(v/total*100);
+    rows.push('<li>'+
+      '<div class="bar"><div class="t"><b>'+sl.name+'</b><span>'+sl.sub+' · '+pct+'%</span></div>'+
+        '<div class="track"><i class="fill" style="width:'+(v?Math.max(4,Math.round(v/max*100)):0)+'%"></i></div></div>'+
+      '<span class="num">'+v+'<small>건</small></span></li>');
+  }
+  return rows.join("");
 }
 function lvl(n){ return n<=0?"":(n<3?"w":"c"); }
 function labelOf(s){
@@ -899,6 +931,9 @@ function renderStats(){
       '<span class="num">'+r.n+'</span>'+
     '</li>';
   }).join("") : '<li><div class="empty" style="width:100%"><strong>해당 기간 기록 없음</strong>기간이나 학급을 바꿔 보세요.</div></li>';
+
+  $("slotSub").textContent = recs.length ? recs.length+"건" : "";
+  $("slotBreak").innerHTML = slotRows(recs.map(function(r){ return r.e.at; }));
 
   var byReason={};
   recs.forEach(function(r){ var k=r.e.reason||"기타"; byReason[k]=(byReason[k]||0)+1; });
