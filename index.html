@@ -757,8 +757,8 @@ function mutateStudent(sid, fn){
     });
   });
 }
-function addRecord(sid, memo, force){
-  var entry = {id:rid(), at:new Date().toISOString(), by:me()||"미기재", reason:REASON, memo:memo||""};
+function addRecord(sid, force){
+  var entry = {id:rid(), at:new Date().toISOString(), by:me()||"미기재", reason:REASON, memo:""};
   return mutateStudent(sid, function(s){
     var h = (s.history||[]).slice();
     if(!force){
@@ -1061,11 +1061,8 @@ function drawSheet(){
     '<div class="sheet-b">'+
       '<div class="bigcount"><b class="'+(c>=3?"crit":"")+'" style="'+(c>=3?"color:var(--crit)":(c>0?"color:var(--warn)":""))+'">'+c+'</b><span>회 누적 적발</span></div>'+
       (st ? st.html(true) : "")+
-      '<div class="block"><h4>적발 기록</h4>'+
-        '<input class="inp" id="memo" placeholder="메모 (선택) — 예: 3회째 지도, 담임 통보">'+
-        (st ? '<button class="btn wide" type="button" data-act="record" data-force="1">'+st.btn+'</button>'
-            : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
-      '</div>'+
+      (st ? '<button class="btn wide" type="button" data-act="record" data-force="1">'+st.btn+'</button>'
+          : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
       '<div class="block"><h4>적발 이력 '+(hist.length?"("+hist.length+")":"")+'</h4>'+
         (hist.length ? '<ul class="hist">'+hist.map(function(e){
           return '<li><span class="d">'+fmtDT(e.at)+'</span>'+
@@ -1305,12 +1302,10 @@ document.addEventListener("click", function(ev){
       return;
     }
     forceOk=false;
-    var memo = ($("memo")||{}).value || "";
     var sid2 = sheetSid;
-    addRecord(sid2, memo.trim(), !!stt).then(function(){
+    addRecord(sid2, !!stt).then(function(){
       var st=students.get(sid2)||{};
       toast(baseName(st.name)+" 적발 기록 · 누적 "+(st.count||0)+"회");
-      if($("memo")) $("memo").value="";
       drawSheet();
     }, function(e){ toast(dbErr(e)); });
     return;

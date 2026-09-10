@@ -338,7 +338,7 @@ function addRecord_(p) {
     }
     var id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
     ls.appendRow([id, now, no, info[1], info[2], info[3],
-      REASON, String(p.memo || '').slice(0, 200), String(p.by || '').slice(0, 40)]);
+      REASON, '', String(p.by || '').slice(0, 40)]);
     var count = (num_(info[5]) || 0) + 1;
     rs.getRange(row, 6, 1, 2).setValues([[count, now]]);
     bumpRev_();

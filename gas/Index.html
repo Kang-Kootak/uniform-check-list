@@ -1006,11 +1006,8 @@ function drawSheet(err){
     '<div class="sheet-b">'+
       '<div class="bigcount"><b style="'+(c>=3?"color:var(--crit)":(c>0?"color:var(--warn)":""))+'">'+c+'</b><span>회 누적 적발</span></div>'+
       (st ? st.html(true) : "")+
-      '<div class="block"><h4>적발 기록</h4>'+
-        '<input class="inp" id="memo" placeholder="메모 (선택) — 예: 3회째 지도, 담임 통보">'+
-        (st ? '<button class="btn wide" type="button" data-act="record" data-force="1">'+st.btn+'</button>'
-            : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
-      '</div>'+
+      (st ? '<button class="btn wide" type="button" data-act="record" data-force="1">'+st.btn+'</button>'
+          : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
       '<div class="block"><h4>적발 이력'+(hist&&hist.length?" ("+hist.length+")":"")+'</h4>'+histHtml+'</div>'+
       (role==="admin" ? '<div class="admin">'+
         '<button type="button" data-act="editstudent">학생 정보 수정</button>'+
@@ -1185,7 +1182,7 @@ function doPlus(no, btn){
   if(row){ row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); }
 
   function done(){ busy.delete(no); if(btn) btn.disabled=false; }
-  call("add",{no:no, memo:"", by:tmp.by}).then(function(d){
+  call("add",{no:no, by:tmp.by}).then(function(d){
     tmp.id=d.id; tmp.at=d.at; tmp.pending=false;
     s.count=d.count; s.lastAt=d.at; rev=d.rev;
     if(histCache[no]) histCache[no].unshift({id:d.id, at:d.at, reason:tmp.reason, memo:"", by:tmp.by});
@@ -1247,16 +1244,14 @@ document.addEventListener("click", function(ev){
       return;
     }
     forceOk=false;
-    var memo=($("memo")||{}).value||"";
     var no=sheetNo, s=students.get(no);
     if(!s) return;
     t.disabled=true;
-    call("add",{no:no, memo:memo.trim(), by:me()||"미기재", force:!!stt}).then(function(d){
+    call("add",{no:no, by:me()||"미기재", force:!!stt}).then(function(d){
       s.count=d.count; s.lastAt=d.at; rev=d.rev;
-      var e={id:d.id, at:d.at, reason:REASON, memo:memo.trim(), by:me()||"미기재"};
+      var e={id:d.id, at:d.at, reason:REASON, memo:"", by:me()||"미기재"};
       if(histCache[no]) histCache[no].unshift(e);
       logs.unshift({id:d.id, at:d.at, no:no, name:s.name, grade:s.grade, klass:s.klass, reason:REASON, memo:e.memo, by:e.by});
-      if($("memo")) $("memo").value="";
       render(); drawSheet();
       toast(baseName(s.name)+" 적발 기록 · 누적 "+d.count+"회");
     }, function(e){
