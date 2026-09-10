@@ -350,10 +350,6 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
         <div class="card"><ul class="rank" id="rank"></ul></div>
       </div>
       <div>
-        <div class="sect-h" style="margin-bottom:8px"><h2>사유별</h2></div>
-        <div class="card pad" id="reasonBreak"></div>
-      </div>
-      <div>
         <div class="sect-h" style="margin-bottom:8px"><h2>내보내기</h2></div>
         <div class="btnrow">
           <button class="btn" id="expRoster" type="button">명단·횟수 CSV</button>
@@ -459,16 +455,15 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
 "use strict";
 
 /* ============ 상수 ============ */
-var DEFAULT_REASONS = ["교복 미착용","생활복·사복 혼용","슬리퍼·크록스 착용","기타"];
+var REASON = "교복 미착용";   // 적발 사유는 이 한 가지로 통일
 var WD = ["일","월","화","수","목","금","토"];
 var CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
 var LS_DATA = "gyobok.students.v1", LS_ME = "gyobok.me", LS_CID = "gyobok.cid",
-    LS_REASONS = "gyobok.reasons.v1", LS_EXEMPT = "gyobok.exempts.v1";
+    LS_EXEMPT = "gyobok.exempts.v1";
 
 /* ============ 상태 ============ */
 var students = new Map();   // sid -> {sid,no,name,grade,klass,num,count,lastAt,history[]}
 var exempts = [];           // 면제 기간 [{id,no,name,reason,from,to,by}]
-var reasons = DEFAULT_REASONS.slice();
 var db = null, backend = "local", dbReady = false;
 var tab = "check", period = "all", klassFilter = "all", shown = 40;
 var busy = new Set(), forceOk = false;
@@ -675,8 +670,6 @@ function saveExemptsLocal(){ lsSet(LS_EXEMPT, exempts); }
 function loadLocal(){
   var arr = lsGet(LS_DATA, []);
   if(Array.isArray(arr)) arr.forEach(function(s){ if(s && s.sid) students.set(s.sid, s); });
-  var r = lsGet(LS_REASONS, null);
-  if(Array.isArray(r) && r.length) reasons = r;
   var x = lsGet(LS_EXEMPT, null);
   if(Array.isArray(x)) exempts = x;
 }
@@ -764,8 +757,8 @@ function mutateStudent(sid, fn){
     });
   });
 }
-function addRecord(sid, reason, memo, force){
-  var entry = {id:rid(), at:new Date().toISOString(), by:me()||"미기재", reason:reason||reasons[0]||"교복 미착용", memo:memo||""};
+function addRecord(sid, memo, force){
+  var entry = {id:rid(), at:new Date().toISOString(), by:me()||"미기재", reason:REASON, memo:memo||""};
   return mutateStudent(sid, function(s){
     var h = (s.history||[]).slice();
     if(!force){
@@ -796,12 +789,6 @@ function delExempt(id){
   return retry(function(){ return db.doc("exempts/"+id).delete(); });
 }
 
-function saveReasons(list){
-  reasons = list; lsSet(LS_REASONS, list);
-  if(backend==="db") return retry(function(){ return db.doc("meta/settings").set({reasons:list, updatedAt:new Date().toISOString()}); });
-  return Promise.resolve();
-}
-
 /* ============ db 연결 ============ */
 function connect(){
   if(!(window.claude && typeof window.claude.use === "function")){ setStore("local"); return; }
@@ -830,10 +817,6 @@ function connect(){
       }).sort(function(a,b){ return a.from < b.from ? 1 : (a.from > b.from ? -1 : 0); });
       lsSet(LS_EXEMPT, exempts);
       render();
-    }, function(){});
-    db.doc("meta/settings").onSnapshot(function(snap){
-      var v = snap.exists ? snap.data() : null;
-      if(v && Array.isArray(v.reasons) && v.reasons.length){ reasons = v.reasons; lsSet(LS_REASONS, reasons); render(); }
     }, function(){});
   }, function(){ setStore("local"); });
 }
@@ -1048,12 +1031,6 @@ function renderStats(){
   $("slotSub").textContent = recs.length ? recs.length+"건" : "";
   $("slotBreak").innerHTML = slotRows(recs.map(function(r){ return r.e.at; }));
 
-  var byReason={};
-  recs.forEach(function(r){ var k=r.e.reason||"기타"; byReason[k]=(byReason[k]||0)+1; });
-  var keys = Object.keys(byReason).sort(function(a,b){ return byReason[b]-byReason[a]; });
-  $("reasonBreak").innerHTML = keys.length ? keys.map(function(k){
-    return '<div class="kv"><span class="k">'+esc(k)+'</span><span class="v">'+byReason[k]+'건</span></div>';
-  }).join("") : '<p class="note">해당 기간에 기록이 없습니다.</p>';
 }
 
 function renderRoster(){
@@ -1084,10 +1061,7 @@ function drawSheet(){
     '<div class="sheet-b">'+
       '<div class="bigcount"><b class="'+(c>=3?"crit":"")+'" style="'+(c>=3?"color:var(--crit)":(c>0?"color:var(--warn)":""))+'">'+c+'</b><span>회 누적 적발</span></div>'+
       (st ? st.html(true) : "")+
-      '<div class="block"><h4>사유 선택하여 기록</h4>'+
-        '<div class="chips" id="rchips">'+reasons.map(function(r,i){
-          return '<button class="chip" type="button" data-act="pickreason" data-v="'+esc(r)+'" aria-pressed="'+(i===0)+'">'+esc(r)+'</button>';
-        }).join("")+'</div>'+
+      '<div class="block"><h4>적발 기록</h4>'+
         '<input class="inp" id="memo" placeholder="메모 (선택) — 예: 3회째 지도, 담임 통보">'+
         (st ? '<button class="btn wide" type="button" data-act="record" data-force="1">'+st.btn+'</button>'
             : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
@@ -1291,7 +1265,7 @@ function doPlus(sid, btn){
   if(st0){ toast(st0.toast(baseName(students.get(sid).name))); return; }
   busy.add(sid); if(btn) btn.disabled=true;
   var s = students.get(sid);
-  addRecord(sid, reasons[0]).then(function(entry){
+  addRecord(sid).then(function(entry){
     var row = document.querySelector('.row[data-sid="'+CSS.escape(sid)+'"]');
     if(row){ row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); }
     var next = (students.get(sid)||{}).count || ((s.count||0)+1);
@@ -1322,10 +1296,6 @@ document.addEventListener("click", function(ev){
       function(e){ toast(dbErr(e)); });
     return;
   }
-  if(act==="pickreason"){
-    Array.prototype.forEach.call($("rchips").querySelectorAll(".chip"), function(c){ c.setAttribute("aria-pressed","false"); });
-    t.setAttribute("aria-pressed","true"); return;
-  }
   if(act==="record"){
     var stx=students.get(sheetSid); if(!stx) return;
     var stt=statusOf(stx);
@@ -1335,11 +1305,9 @@ document.addEventListener("click", function(ev){
       return;
     }
     forceOk=false;
-    var chip = $("rchips").querySelector('[aria-pressed="true"]');
-    var reason = chip ? chip.getAttribute("data-v") : reasons[0];
     var memo = ($("memo")||{}).value || "";
     var sid2 = sheetSid;
-    addRecord(sid2, reason, memo.trim(), !!stt).then(function(){
+    addRecord(sid2, memo.trim(), !!stt).then(function(){
       var st=students.get(sid2)||{};
       toast(baseName(st.name)+" 적발 기록 · 누적 "+(st.count||0)+"회");
       if($("memo")) $("memo").value="";

@@ -11,7 +11,7 @@ var HDR_R = ['학번', '이름', '학년', '반', '번호', '누적횟수', '최
 var HDR_L = ['기록ID', '일시', '학번', '이름', '학년', '반', '사유', '메모', '기록자'];
 var HDR_E = ['면제ID', '학번', '이름', '사유', '시작일', '종료일', '등록자', '등록일시'];
 var EXEMPT_LIMIT = 500;
-var DEF_REASONS = '교복 미착용, 생활복·사복 혼용, 슬리퍼·크록스 착용, 기타';
+var REASON = '교복 미착용';   // 적발 사유는 이 한 가지로 통일
 var LOG_LIMIT = 1000;      // 앱이 한 번에 받아가는 최근 기록 수
 var CFG_TTL = 30;          // 설정 캐시 (초). PIN을 바꾸면 최대 이만큼 뒤에 적용됩니다.
 
@@ -21,8 +21,6 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('교복 지도')
     .addItem('① 초기 설정 (시트 만들기)', '초기설정')
     .addItem('② 앱 주소 보기', '앱주소보기')
-    .addSeparator()
-    .addItem('적발 사유 기본값으로 되돌리기', '사유기본값')
     .addSeparator()
     .addItem('오늘 자료 백업 사본 만들기', '백업사본')
     .addItem('적발 기록만 초기화', '기록초기화')
@@ -55,16 +53,15 @@ function 초기설정() {
 
   var cs = ss.getSheetByName(SH_C) || ss.insertSheet(SH_C);
   if (cs.getLastRow() === 0) {
-    cs.getRange(1, 1, 5, 3).setValues([
+    cs.getRange(1, 1, 4, 3).setValues([
       ['항목', '값', '설명'],
       ['기록PIN', '', '선도부원·선생님이 앱에 들어올 때 입력하는 숫자입니다. 비워두면 링크를 아는 누구나 관리자로 들어옵니다.'],
       ['관리PIN', '', '명단 편집·삭제 권한. 기록PIN과 다르게 정하세요.'],
-      ['적발사유', DEF_REASONS, '쉼표로 구분합니다. 맨 앞 항목이 앱의 +1 버튼 기본 사유입니다.'],
       ['학교명', '', '앱 화면에 표시할 이름 (선택)']
     ]);
     cs.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#e2ecf6');
     cs.setColumnWidth(1, 100); cs.setColumnWidth(2, 260); cs.setColumnWidth(3, 460);
-    cs.getRange(2, 3, 4, 1).setWrap(true);
+    cs.getRange(2, 3, 3, 1).setWrap(true);
     cs.setFrozenRows(1);
   }
   ss.setSpreadsheetTimeZone('Asia/Seoul');
@@ -91,17 +88,6 @@ function 앱주소보기() {
     return;
   }
   ui.alert('앱 주소\n\n' + url + '\n\n이 주소를 선도부원에게 공유하세요.\n휴대폰에서 열고 홈 화면에 추가하면 앱처럼 쓸 수 있습니다.');
-}
-
-function 사유기본값() {
-  var ui = SpreadsheetApp.getUi();
-  var res = ui.alert('적발 사유 기본값으로 되돌리기',
-    '[설정] 시트의 적발사유를 아래로 바꿉니다.\n\n' + DEF_REASONS +
-    '\n\n이미 기록된 자료는 그대로 유지됩니다. 계속할까요?',
-    ui.ButtonSet.YES_NO);
-  if (res !== ui.Button.YES) return;
-  saveReasons_(DEF_REASONS.split(',').map(function (v) { return v.trim(); }));
-  ui.alert('적발 사유를 바꿨습니다.\n\n' + DEF_REASONS + '\n\n앱에서 새로고침하면 반영됩니다.');
 }
 
 function 백업사본() {
@@ -146,7 +132,6 @@ function api(p) {
       case 'bulk':    return admin ? ok_(bulkRoster_(p.list || [])) : deny_();
       case 'put':     return admin ? ok_(putStudent_(p)) : deny_();
       case 'del':     return admin ? ok_(delStudent_(normNo_(p.no))) : deny_();
-      case 'reasons': return admin ? ok_(saveReasons_(p.list || [])) : deny_();
       case 'ex_add':  return admin ? ok_(exemptAdd_(p)) : deny_();
       case 'ex_del':  return admin ? ok_(exemptDel_(String(p.id || ''))) : deny_();
       case 'reset':   return admin ? ok_(resetCounts_()) : deny_();
@@ -210,7 +195,6 @@ function boot_(role) {
     students: students,
     logs: recentLogs_(LOG_LIMIT),
     exempts: readExempts_(),
-    reasons: reasons_(cfg),
     school: String(cfg['학교명'] || '').trim(),
     pinSet: !!(String(cfg['기록PIN'] || '').trim() || String(cfg['관리PIN'] || '').trim()),
     sheetUrl: role === 'admin' ? ss.getUrl() : '',
@@ -354,7 +338,7 @@ function addRecord_(p) {
     }
     var id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
     ls.appendRow([id, now, no, info[1], info[2], info[3],
-      String(p.reason || '').slice(0, 60), String(p.memo || '').slice(0, 200), String(p.by || '').slice(0, 40)]);
+      REASON, String(p.memo || '').slice(0, 200), String(p.by || '').slice(0, 40)]);
     var count = (num_(info[5]) || 0) + 1;
     rs.getRange(row, 6, 1, 2).setValues([[count, now]]);
     bumpRev_();
@@ -508,22 +492,6 @@ function wipeRoster_() {
   }
 }
 
-function saveReasons_(list) {
-  var clean = [];
-  for (var i = 0; i < list.length; i++) {
-    var v = String(list[i] || '').trim().replace(/,/g, ' ');
-    if (v) clean.push(v);
-  }
-  if (!clean.length) throw new Error('사유를 최소 한 개 이상 남겨주세요.');
-  var cs = sheet_(ss_(), SH_C);
-  var row = cfgRow_(cs, '적발사유');
-  if (row) cs.getRange(row, 2).setValue(clean.join(', '));
-  else cs.appendRow(['적발사유', clean.join(', '), '']);
-  cache_().remove('cfg');
-  bumpRev_();
-  return { reasons: clean };
-}
-
 /* ─────────────────────────── 도우미 ─────────────────────────── */
 
 function ss_() {
@@ -569,13 +537,6 @@ function cfgRow_(cs, key) {
   var vals = cs.getRange(2, 1, last - 1, 1).getValues();
   for (var i = 0; i < vals.length; i++) if (String(vals[i][0] || '').trim() === key) return i + 2;
   return 0;
-}
-
-function reasons_(cfg) {
-  var raw = String((cfg || config_())['적발사유'] || DEF_REASONS);
-  var out = [];
-  raw.split(/[,\n]/).forEach(function (v) { v = v.trim(); if (v) out.push(v); });
-  return out.length ? out : DEF_REASONS.split(', ');
 }
 
 function rev_() {

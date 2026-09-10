@@ -371,10 +371,6 @@ a.btn{text-decoration:none}
         <div class="sect-h" style="margin-bottom:8px"><h2>누적 적발 순위</h2><span class="sub" id="rankSub"></span></div>
         <div class="card"><ul class="rank" id="rank"></ul></div>
       </div>
-      <div>
-        <div class="sect-h" style="margin-bottom:8px"><h2>사유별</h2></div>
-        <div class="card pad" id="reasonBreak"></div>
-      </div>
       <div data-admin hidden>
         <div class="sect-h" style="margin-bottom:8px"><h2>원본 자료</h2></div>
         <div class="card pad" style="display:flex;flex-direction:column;gap:10px">
@@ -495,7 +491,8 @@ var LS_CACHE="gyobok.cache.v2", LS_ME="gyobok.me", LS_PIN="gyobok.pin";
 var POLL_MS=20000, IDLE_MS=15*60*1000;
 
 /* ============ 상태 ============ */
-var students=new Map(), logs=[], exempts=[], reasons=["교복 미착용","생활복·사복 혼용","슬리퍼·크록스 착용","기타"], histCache={};
+var REASON="교복 미착용";   // 적발 사유는 이 한 가지로 통일
+var students=new Map(), logs=[], exempts=[], histCache={};
 var role=null, pinSet=true, sheetUrl="", logLimit=1000, rev=0;
 var tab="check", period="all", klassFilter="all", shown=40;
 var busy=new Set(), forceOk=false, inflight=0, lastAct=Date.now(), syncedAt=null, booted=false;
@@ -725,7 +722,6 @@ function errMsg(e){
 /* ============ 부팅 / 동기화 ============ */
 function applyBoot(d){
   role=d.role; pinSet=d.pinSet; sheetUrl=d.sheetUrl||""; logLimit=d.logLimit||1000; rev=d.rev||0;
-  reasons=(d.reasons&&d.reasons.length)?d.reasons:reasons;
   students=new Map();
   (d.students||[]).forEach(function(s){ students.set(s.no, s); });
   logs=d.logs||[];
@@ -734,7 +730,7 @@ function applyBoot(d){
   syncedAt=new Date().toISOString();
   booted=true;
   if(d.school) $("brand").innerHTML='<span class="tick">'+esc(d.school)+'</span> 교복 지도';
-  lsSet(LS_CACHE, {students:d.students||[], logs:logs.slice(0,200), exempts:exempts, reasons:reasons, role:role, at:syncedAt});
+  lsSet(LS_CACHE, {students:d.students||[], logs:logs.slice(0,200), exempts:exempts, role:role, at:syncedAt});
   applyRole();
   render();
 }
@@ -744,7 +740,6 @@ function loadCache(){
   (c.students||[]).forEach(function(s){ students.set(s.no,s); });
   logs=c.logs||[];
   exempts=c.exempts||[];
-  if(c.reasons&&c.reasons.length) reasons=c.reasons;
   role=c.role||null;
   syncedAt=c.at||null;
 }
@@ -956,13 +951,6 @@ function renderStats(){
   $("slotSub").textContent = recs.length ? recs.length+"건" : "";
   $("slotBreak").innerHTML = slotRows(recs.map(function(r){ return r.at; }));
 
-  var byReason={};
-  recs.forEach(function(r){ var k=r.reason||"기타"; byReason[k]=(byReason[k]||0)+1; });
-  var keys=Object.keys(byReason).sort(function(a,b){ return byReason[b]-byReason[a]; });
-  $("reasonBreak").innerHTML = (keys.length
-      ? keys.map(function(k){ return '<div class="kv"><span class="k">'+esc(k)+'</span><span class="v">'+byReason[k]+'건</span></div>'; }).join("")
-      : '<p class="note">해당 기간에 기록이 없습니다.</p>')+
-    (whole && logs.length>=logLimit ? '<p class="note" style="margin-top:10px">사유별 집계는 앱이 받아온 최근 '+logLimit+'건 기준입니다. 전체 집계는 스프레드시트에서 확인하세요.</p>' : "");
 }
 
 function renderRoster(){
@@ -1018,10 +1006,7 @@ function drawSheet(err){
     '<div class="sheet-b">'+
       '<div class="bigcount"><b style="'+(c>=3?"color:var(--crit)":(c>0?"color:var(--warn)":""))+'">'+c+'</b><span>회 누적 적발</span></div>'+
       (st ? st.html(true) : "")+
-      '<div class="block"><h4>사유 선택하여 기록</h4>'+
-        '<div class="chips" id="rchips">'+reasons.map(function(r,i){
-          return '<button class="chip" type="button" data-act="pickreason" data-v="'+esc(r)+'" aria-pressed="'+(i===0)+'">'+esc(r)+'</button>';
-        }).join("")+'</div>'+
+      '<div class="block"><h4>적발 기록</h4>'+
         '<input class="inp" id="memo" placeholder="메모 (선택) — 예: 3회째 지도, 담임 통보">'+
         (st ? '<button class="btn wide" type="button" data-act="record" data-force="1">'+st.btn+'</button>'
             : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
@@ -1192,7 +1177,7 @@ function doPlus(no, btn){
 
   var prevCount=s.count||0, prevLast=s.lastAt||null;
   var tmp={id:"tmp_"+rid(), at:new Date().toISOString(), no:no, name:s.name, grade:s.grade, klass:s.klass,
-           reason:reasons[0]||"교복 미착용", memo:"", by:me()||"미기재", pending:true};
+           reason:REASON, memo:"", by:me()||"미기재", pending:true};
   s.count=(s.count||0)+1; s.lastAt=tmp.at;
   logs.unshift(tmp);
   render();
@@ -1200,7 +1185,7 @@ function doPlus(no, btn){
   if(row){ row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); }
 
   function done(){ busy.delete(no); if(btn) btn.disabled=false; }
-  call("add",{no:no, reason:tmp.reason, memo:"", by:tmp.by}).then(function(d){
+  call("add",{no:no, memo:"", by:tmp.by}).then(function(d){
     tmp.id=d.id; tmp.at=d.at; tmp.pending=false;
     s.count=d.count; s.lastAt=d.at; rev=d.rev;
     if(histCache[no]) histCache[no].unshift({id:d.id, at:d.at, reason:tmp.reason, memo:"", by:tmp.by});
@@ -1253,10 +1238,6 @@ document.addEventListener("click", function(ev){
   if(act==="more"){ shown+=40; renderCheck(); return; }
   if(act==="closesheet"){ $("sheet").close(); return; }
   if(act==="undo"){ doUndo(sid, t.getAttribute("data-eid")); return; }
-  if(act==="pickreason"){
-    Array.prototype.forEach.call($("rchips").querySelectorAll(".chip"), function(c){ c.setAttribute("aria-pressed","false"); });
-    t.setAttribute("aria-pressed","true"); return;
-  }
   if(act==="record"){
     var stx=students.get(sheetNo); if(!stx) return;
     var stt=statusOf(stx);
@@ -1266,17 +1247,15 @@ document.addEventListener("click", function(ev){
       return;
     }
     forceOk=false;
-    var chip=$("rchips").querySelector('[aria-pressed="true"]');
-    var reason=chip?chip.getAttribute("data-v"):reasons[0];
     var memo=($("memo")||{}).value||"";
     var no=sheetNo, s=students.get(no);
     if(!s) return;
     t.disabled=true;
-    call("add",{no:no, reason:reason, memo:memo.trim(), by:me()||"미기재", force:!!stt}).then(function(d){
+    call("add",{no:no, memo:memo.trim(), by:me()||"미기재", force:!!stt}).then(function(d){
       s.count=d.count; s.lastAt=d.at; rev=d.rev;
-      var e={id:d.id, at:d.at, reason:reason, memo:memo.trim(), by:me()||"미기재"};
+      var e={id:d.id, at:d.at, reason:REASON, memo:memo.trim(), by:me()||"미기재"};
       if(histCache[no]) histCache[no].unshift(e);
-      logs.unshift({id:d.id, at:d.at, no:no, name:s.name, grade:s.grade, klass:s.klass, reason:reason, memo:e.memo, by:e.by});
+      logs.unshift({id:d.id, at:d.at, no:no, name:s.name, grade:s.grade, klass:s.klass, reason:REASON, memo:e.memo, by:e.by});
       if($("memo")) $("memo").value="";
       render(); drawSheet();
       toast(baseName(s.name)+" 적발 기록 · 누적 "+d.count+"회");
