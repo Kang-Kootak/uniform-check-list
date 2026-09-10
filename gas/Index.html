@@ -142,17 +142,19 @@ ul{margin:0;padding:0;list-style:none}
 .more{width:100%;padding:12px;border:1px dashed var(--line);border-radius:12px;background:none;
   color:var(--muted);font-size:13px;cursor:pointer}
 
-/* ---------- 지도 대상 제외 (운동부·위탁생) ---------- */
-.row.exempt{flex-direction:column;align-items:stretch;gap:9px;padding:12px 14px}
-.exempt-top{display:flex;align-items:center;gap:10px}
-.exempt-top .idbtn{flex:1;min-width:0}
-.exempt-note{padding:9px 11px;border-radius:10px;font-size:13px;line-height:1.45;
+/* ---------- 줄 안내 (지도 제외 · 오늘 체크 완료) ---------- */
+.row.noted{flex-direction:column;align-items:stretch;gap:9px;padding:12px 14px}
+.noted-top{display:flex;align-items:center;gap:10px}
+.noted-top .idbtn{flex:1;min-width:0}
+.rownote{padding:9px 11px;border-radius:10px;font-size:13px;line-height:1.45;
   background:var(--accent-soft);color:var(--accent-2);
   border:1px solid color-mix(in srgb,var(--accent) 26%,transparent)}
-.exempt-note b{font-weight:600}
-.exempt-note .sport{color:var(--muted);font-size:12px}
-.exempt-note.big{padding:13px 14px;border-radius:12px;font-size:13.5px}
-.exempt-note .sub{display:block;margin-top:4px;color:var(--muted);font-size:12.5px}
+.rownote b{font-weight:600}
+.rownote .sport{color:var(--muted);font-size:12px}
+.rownote.big{padding:13px 14px;border-radius:12px;font-size:13.5px}
+.rownote .sub{display:block;margin-top:4px;color:var(--muted);font-size:12.5px}
+.rownote.done{background:var(--ok-soft);color:var(--ok);
+  border-color:color-mix(in srgb,var(--ok) 30%,transparent)}
 
 /* ---------- log list ---------- */
 .log li{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-bottom:1px solid var(--line-2)}
@@ -503,10 +505,29 @@ function baseName(name){
   return String(name||"").replace(EXEMPT_RE,"").replace(/\s{2,}/g," ").trim();
 }
 function exemptNote(ex, big){
-  return '<div class="exempt-note'+(big?" big":"")+'">'+
+  return '<div class="rownote'+(big?" big":"")+'">'+
     '<b>'+ex.kind+'</b>'+(ex.sport?' <span class="sport">'+ex.sport+'</span>':"")+
     ' ／ 교복지도 대상 아님'+
     (big?'<span class="sub">운동부·위탁생은 교복 지도 대상에서 제외됩니다.</span>':"")+
+  '</div>';
+}
+/* 하루 한 번 원칙 — 오늘 이미 체크된 학생인지 */
+function hhmm(iso){ var d=new Date(iso); return pad2(d.getHours())+":"+pad2(d.getMinutes()); }
+function checkedToday(s){
+  return (s && s.lastAt && dayKey(s.lastAt)===todayKey()) ? s.lastAt : null;
+}
+function periodName(iso){
+  var h=new Date(iso).getHours();
+  return h<12 ? "아침" : (h<14 ? "점심" : "");
+}
+function whenToday(iso){
+  var pn=periodName(iso);
+  return "오늘 "+(pn?pn+" ":"")+hhmm(iso);
+}
+function checkNote(at, big){
+  return '<div class="rownote done'+(big?" big":"")+'">'+
+    '<b>✓ '+whenToday(at)+' 체크됨</b>'+
+    '<span class="sub">하루 한 번만 기록합니다. 오늘은 더 체크하지 않습니다.</span>'+
   '</div>';
 }
 function lvl(n){ return n<=0?"":(n<3?"w":"c"); }
@@ -578,6 +599,7 @@ function errMsg(e){
   if(!e) return "요청을 처리하지 못했습니다.";
   if(e.err==="PIN") return "PIN이 맞지 않습니다.";
   if(e.err==="ROLE") return "관리 PIN이 필요한 기능입니다.";
+  if(e.err==="DUP") return e.at ? "이미 "+whenToday(e.at)+"에 체크된 학생입니다." : "오늘 이미 체크된 학생입니다.";
   if(e.err==="NET") return "인터넷 연결을 확인하고 다시 시도해 주세요.";
   return e.message || "요청을 처리하지 못했습니다.";
 }
@@ -660,18 +682,18 @@ function bn(kind,title,body){
 }
 
 function studentRow(s){
-  var c=s.count||0, ex=exemptOf(s.name), nm=baseName(s.name);
+  var c=s.count||0, ex=exemptOf(s.name), done=ex?null:checkedToday(s), nm=baseName(s.name);
   var meta=['<span class="sid">'+esc(s.no)+'</span>'];
   var lb=labelOf(s); if(lb) meta.push("<span>"+esc(lb)+"</span>");
-  if(!ex && s.lastAt) meta.push("<span>최근 "+fmtShort(s.lastAt)+"</span>");
+  if(!ex && !done && s.lastAt) meta.push("<span>최근 "+fmtShort(s.lastAt)+"</span>");
   var idbtn='<button class="idbtn" type="button" data-act="open" data-sid="'+esc(s.no)+'">'+
       '<div class="nm">'+esc(nm)+'</div>'+
       '<div class="meta">'+meta.join('<span aria-hidden="true">·</span>')+'</div>'+
     '</button>';
-  if(ex){
-    return '<div class="row exempt" data-sid="'+esc(s.no)+'">'+
-      '<div class="exempt-top">'+idbtn+(c>0?'<span class="cnt '+lvl(c)+'">'+c+'회</span>':"")+'</div>'+
-      exemptNote(ex)+
+  if(ex || done){
+    return '<div class="row noted" data-sid="'+esc(s.no)+'">'+
+      '<div class="noted-top">'+idbtn+(c>0?'<span class="cnt '+lvl(c)+'">'+c+'회</span>':"")+'</div>'+
+      (ex ? exemptNote(ex) : checkNote(done))+
     '</div>';
   }
   return '<div class="row" data-sid="'+esc(s.no)+'">'+idbtn+
@@ -848,7 +870,7 @@ function openSheet(no){
 function drawSheet(err){
   var s=students.get(sheetNo);
   if(!s){ if($("sheet").open) $("sheet").close(); return; }
-  var c=s.count||0, hist=histCache[sheetNo], ex=exemptOf(s.name);
+  var c=s.count||0, hist=histCache[sheetNo], ex=exemptOf(s.name), done=ex?null:checkedToday(s);
   var histHtml;
   if(err) histHtml='<p class="note" style="color:var(--crit)">'+esc(err)+'</p>';
   else if(hist===undefined) histHtml='<p class="note">불러오는 중…</p>';
@@ -865,14 +887,15 @@ function drawSheet(err){
       '<button class="close" type="button" data-act="closesheet" aria-label="닫기">✕</button></div>'+
     '<div class="sheet-b">'+
       '<div class="bigcount"><b style="'+(c>=3?"color:var(--crit)":(c>0?"color:var(--warn)":""))+'">'+c+'</b><span>회 누적 적발</span></div>'+
-      (ex ? exemptNote(ex, true) : "")+
+      (ex ? exemptNote(ex, true) : (done ? checkNote(done, true) : ""))+
       '<div class="block"><h4>사유 선택하여 기록</h4>'+
         '<div class="chips" id="rchips">'+reasons.map(function(r,i){
           return '<button class="chip" type="button" data-act="pickreason" data-v="'+esc(r)+'" aria-pressed="'+(i===0)+'">'+esc(r)+'</button>';
         }).join("")+'</div>'+
         '<input class="inp" id="memo" placeholder="메모 (선택) — 예: 3회째 지도, 담임 통보">'+
-        (ex ? '<button class="btn wide" type="button" data-act="record" data-force="1">그래도 적발 기록하기</button>'
-            : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
+        (ex || done
+          ? '<button class="btn wide" type="button" data-act="record" data-force="1">'+(ex?"그래도 적발 기록하기":"그래도 한 번 더 기록하기")+'</button>'
+          : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
       '</div>'+
       '<div class="block"><h4>적발 이력'+(hist&&hist.length?" ("+hist.length+")":"")+'</h4>'+histHtml+'</div>'+
       (role==="admin" ? '<div class="admin">'+
@@ -968,8 +991,11 @@ function doPlus(no, btn){
   var s=students.get(no);
   if(!s || busy.has(no)) return;
   if(exemptOf(s.name)){ toast("교복 지도 대상이 아닌 학생입니다."); return; }
+  var dn=checkedToday(s);
+  if(dn){ toast(baseName(s.name)+" 학생은 "+whenToday(dn)+"에 이미 체크됐습니다."); return; }
   busy.add(no); if(btn) btn.disabled=true;
 
+  var prevCount=s.count||0, prevLast=s.lastAt||null;
   var tmp={id:"tmp_"+rid(), at:new Date().toISOString(), no:no, name:s.name, grade:s.grade, klass:s.klass,
            reason:reasons[0]||"교복 미착용", memo:"", by:me()||"미기재", pending:true};
   s.count=(s.count||0)+1; s.lastAt=tmp.at;
@@ -988,8 +1014,12 @@ function doPlus(no, btn){
     toast(baseName(s.name)+" 적발 기록 · 누적 "+d.count+"회", "취소", function(){ doUndo(no, d.id); });
     done();
   }, function(e){
-    s.count=Math.max(0,(s.count||1)-1);
+    s.count=prevCount; s.lastAt=prevLast;
     logs=logs.filter(function(x){ return x.id!==tmp.id; });
+    if(e && e.err==="DUP"){
+      if(e.at) s.lastAt=e.at;
+      if(typeof e.count==="number") s.count=e.count;
+    }
     render();
     toast(errMsg(e));
     done();
@@ -1034,10 +1064,13 @@ document.addEventListener("click", function(ev){
   }
   if(act==="record"){
     var stx=students.get(sheetNo); if(!stx) return;
-    var exx=exemptOf(stx.name);
-    if(exx && !forceOk){
-      askConfirm("교복 지도 대상이 아닙니다",
-        "<b>"+esc(baseName(stx.name))+"</b> 학생은 <b>"+exx.kind+"</b>으로 교복 지도 대상에서 제외됩니다.<br>그래도 적발 기록을 남길까요?", "기록", false)
+    var exx=exemptOf(stx.name), dnx=exx?null:checkedToday(stx);
+    if((exx||dnx) && !forceOk){
+      askConfirm(
+        exx ? "교복 지도 대상이 아닙니다" : "오늘 이미 체크된 학생입니다",
+        exx ? "<b>"+esc(baseName(stx.name))+"</b> 학생은 <b>"+exx.kind+"</b>으로 교복 지도 대상에서 제외됩니다.<br>그래도 적발 기록을 남길까요?"
+            : "<b>"+esc(baseName(stx.name))+"</b> 학생은 <b>"+whenToday(dnx)+"</b>에 이미 체크됐습니다.<br>하루 한 번만 기록하는 것이 원칙입니다. 그래도 한 번 더 기록할까요?",
+        "기록", false)
         .then(function(yes){ if(!yes) return; forceOk=true; t.click(); forceOk=false; });
       return;
     }
@@ -1048,7 +1081,7 @@ document.addEventListener("click", function(ev){
     var no=sheetNo, s=students.get(no);
     if(!s) return;
     t.disabled=true;
-    call("add",{no:no, reason:reason, memo:memo.trim(), by:me()||"미기재"}).then(function(d){
+    call("add",{no:no, reason:reason, memo:memo.trim(), by:me()||"미기재", force:!!(exx||dnx)}).then(function(d){
       s.count=d.count; s.lastAt=d.at; rev=d.rev;
       var e={id:d.id, at:d.at, reason:reason, memo:memo.trim(), by:me()||"미기재"};
       if(histCache[no]) histCache[no].unshift(e);
@@ -1056,7 +1089,10 @@ document.addEventListener("click", function(ev){
       if($("memo")) $("memo").value="";
       render(); drawSheet();
       toast(baseName(s.name)+" 적발 기록 · 누적 "+d.count+"회");
-    }, function(e){ toast(errMsg(e)); t.disabled=false; });
+    }, function(e){
+      if(e && e.err==="DUP"){ if(e.at) s.lastAt=e.at; render(); drawSheet(); }
+      toast(errMsg(e)); t.disabled=false;
+    });
     return;
   }
   if(act==="editstudent"){ editStudent(sheetNo); return; }

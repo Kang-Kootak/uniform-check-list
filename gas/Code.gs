@@ -134,6 +134,9 @@ function api(p) {
       default:        return { ok: false, err: 'OP', message: '알 수 없는 요청입니다.' };
     }
   } catch (e) {
+    if (e && e.dup) {
+      return { ok: false, err: 'DUP', at: e.at, count: e.count, message: e.message };
+    }
     return { ok: false, err: 'ERR', message: String((e && e.message) || e) };
   }
 }
@@ -244,8 +247,13 @@ function addRecord_(p) {
     var row = rosterIndex_(rs)[no];
     if (!row) throw new Error('명단에 없는 학번입니다. 명단을 먼저 등록해 주세요.');
     var info = rs.getRange(row, 1, 1, 7).getValues()[0];
-    var id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
     var now = new Date();
+    // 하루 한 번 원칙 — 오늘 이미 기록된 학생은 막는다 (force가 있으면 통과)
+    if (!p.force && sameDay_(info[6], now)) {
+      throw { dup: true, at: iso_(info[6]), count: num_(info[5]) || 0,
+              message: '오늘 이미 체크된 학생입니다.' };
+    }
+    var id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
     ls.appendRow([id, now, no, info[1], info[2], info[3],
       String(p.reason || '').slice(0, 60), String(p.memo || '').slice(0, 200), String(p.by || '').slice(0, 40)]);
     var count = (num_(info[5]) || 0) + 1;
@@ -562,6 +570,16 @@ function iso_(v) {
   if (!v) return null;
   var d = (v instanceof Date) ? v : new Date(v);
   return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** 스프레드시트 시간대 기준으로 같은 날인지 */
+function sameDay_(a, b) {
+  if (!a || !b) return false;
+  var da = (a instanceof Date) ? a : new Date(a);
+  var db = (b instanceof Date) ? b : new Date(b);
+  if (isNaN(da.getTime()) || isNaN(db.getTime())) return false;
+  var tz = tz_();
+  return Utilities.formatDate(da, tz, 'yyyy-MM-dd') === Utilities.formatDate(db, tz, 'yyyy-MM-dd');
 }
 
 function tz_() {
