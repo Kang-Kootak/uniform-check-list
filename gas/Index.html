@@ -142,6 +142,18 @@ ul{margin:0;padding:0;list-style:none}
 .more{width:100%;padding:12px;border:1px dashed var(--line);border-radius:12px;background:none;
   color:var(--muted);font-size:13px;cursor:pointer}
 
+/* ---------- 지도 대상 제외 (운동부·위탁생) ---------- */
+.row.exempt{flex-direction:column;align-items:stretch;gap:9px;padding:12px 14px}
+.exempt-top{display:flex;align-items:center;gap:10px}
+.exempt-top .idbtn{flex:1;min-width:0}
+.exempt-note{padding:9px 11px;border-radius:10px;font-size:13px;line-height:1.45;
+  background:var(--accent-soft);color:var(--accent-2);
+  border:1px solid color-mix(in srgb,var(--accent) 26%,transparent)}
+.exempt-note b{font-weight:600}
+.exempt-note .sport{color:var(--muted);font-size:12px}
+.exempt-note.big{padding:13px 14px;border-radius:12px;font-size:13.5px}
+.exempt-note .sub{display:block;margin-top:4px;color:var(--muted);font-size:12.5px}
+
 /* ---------- log list ---------- */
 .log li{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-bottom:1px solid var(--line-2)}
 .log li:last-child{border-bottom:0}
@@ -363,6 +375,7 @@ a.btn{text-decoration:none}
           <div class="kv"><span class="k">권한</span><span class="v" id="roleState" style="font-family:var(--font-ui)">—</span></div>
           <div class="kv"><span class="k">등록 학생</span><span class="v" id="cntStudents">0</span></div>
           <div class="kv"><span class="k">누적 기록</span><span class="v" id="cntRecords">0</span></div>
+          <div class="kv"><span class="k">지도 제외</span><span class="v" id="cntExempt">0</span></div>
           <div class="kv"><span class="k">마지막 동기화</span><span class="v" id="syncedAt" style="font-family:var(--font-ui)">—</span></div>
         </div>
         <div class="btnrow">
@@ -451,7 +464,7 @@ var POLL_MS=20000, IDLE_MS=15*60*1000;
 var students=new Map(), logs=[], reasons=["교복 미착용"], histCache={};
 var role=null, pinSet=true, sheetUrl="", logLimit=1000, rev=0;
 var tab="check", period="all", klassFilter="all", shown=40;
-var busy=new Set(), inflight=0, lastAct=Date.now(), syncedAt=null, booted=false;
+var busy=new Set(), forceOk=false, inflight=0, lastAct=Date.now(), syncedAt=null, booted=false;
 
 /* ============ 유틸 ============ */
 function $(id){ return document.getElementById(id); }
@@ -479,6 +492,23 @@ function fmtDT(iso){ var d=new Date(iso);
   return (d.getMonth()+1)+"/"+d.getDate()+"("+WD[d.getDay()]+") "+pad2(d.getHours())+":"+pad2(d.getMinutes()); }
 function fmtClock(iso){ var d=new Date(iso); return pad2(d.getHours())+":"+pad2(d.getMinutes()); }
 function fmtWhen(iso){ return dayKey(iso)===todayKey() ? fmtClock(iso) : fmtShort(iso); }
+/* 이름 뒤 괄호 표기 — (태)·(배)는 운동부, (위)는 위탁생 → 교복 지도 대상 제외 */
+var EXEMPT_MAP={"태":{kind:"운동부",sport:"태권도"},"배":{kind:"운동부",sport:"배드민턴"},"위":{kind:"위탁생",sport:""}};
+var EXEMPT_RE=/[(（\[［]\s*(태|배|위)\s*[)）\]］]/;
+function exemptOf(name){
+  var m=EXEMPT_RE.exec(String(name||""));
+  return m ? EXEMPT_MAP[m[1]] : null;
+}
+function baseName(name){
+  return String(name||"").replace(EXEMPT_RE,"").replace(/\s{2,}/g," ").trim();
+}
+function exemptNote(ex, big){
+  return '<div class="exempt-note'+(big?" big":"")+'">'+
+    '<b>'+ex.kind+'</b>'+(ex.sport?' <span class="sport">'+ex.sport+'</span>':"")+
+    ' ／ 교복지도 대상 아님'+
+    (big?'<span class="sub">운동부·위탁생은 교복 지도 대상에서 제외됩니다.</span>':"")+
+  '</div>';
+}
 function lvl(n){ return n<=0?"":(n<3?"w":"c"); }
 function labelOf(s){ return s && s.grade ? s.grade+"학년 "+s.klass+"반 "+s.num+"번" : ""; }
 
@@ -630,29 +660,35 @@ function bn(kind,title,body){
 }
 
 function studentRow(s){
-  var c=s.count||0, meta=['<span class="sid">'+esc(s.no)+'</span>'];
+  var c=s.count||0, ex=exemptOf(s.name), nm=baseName(s.name);
+  var meta=['<span class="sid">'+esc(s.no)+'</span>'];
   var lb=labelOf(s); if(lb) meta.push("<span>"+esc(lb)+"</span>");
-  if(s.lastAt) meta.push("<span>최근 "+fmtShort(s.lastAt)+"</span>");
-  return '<div class="row" data-sid="'+esc(s.no)+'">'+
-    '<button class="idbtn" type="button" data-act="open" data-sid="'+esc(s.no)+'">'+
-      '<div class="nm">'+esc(s.name)+'</div>'+
+  if(!ex && s.lastAt) meta.push("<span>최근 "+fmtShort(s.lastAt)+"</span>");
+  var idbtn='<button class="idbtn" type="button" data-act="open" data-sid="'+esc(s.no)+'">'+
+      '<div class="nm">'+esc(nm)+'</div>'+
       '<div class="meta">'+meta.join('<span aria-hidden="true">·</span>')+'</div>'+
-    '</button>'+
+    '</button>';
+  if(ex){
+    return '<div class="row exempt" data-sid="'+esc(s.no)+'">'+
+      '<div class="exempt-top">'+idbtn+(c>0?'<span class="cnt '+lvl(c)+'">'+c+'회</span>':"")+'</div>'+
+      exemptNote(ex)+
+    '</div>';
+  }
+  return '<div class="row" data-sid="'+esc(s.no)+'">'+idbtn+
     '<span class="cnt '+lvl(c)+'">'+c+'회</span>'+
-    '<button class="plus" type="button" data-act="plus" data-sid="'+esc(s.no)+'" aria-label="'+esc(s.name)+' 적발 1회 추가">+1</button>'+
+    '<button class="plus" type="button" data-act="plus" data-sid="'+esc(s.no)+'" aria-label="'+esc(nm)+' 적발 1회 추가">+1</button>'+
   '</div>';
 }
-
 function searchList(q){
   q=q.trim(); if(!q) return [];
   var digits=/^\d+$/.test(q), lower=q.toLowerCase(), out=[];
   students.forEach(function(s){
     var hit = digits ? String(s.no).indexOf(q)>=0
-      : ((s.name||"").toLowerCase().indexOf(lower)>=0 || chosung(s.name||"").indexOf(q)>=0);
+      : (baseName(s.name).toLowerCase().indexOf(lower)>=0 || chosung(baseName(s.name)).indexOf(q)>=0);
     if(hit) out.push(s);
   });
   out.sort(function(a,b){
-    var an=(a.name||"").indexOf(q)===0?0:1, bn2=(b.name||"").indexOf(q)===0?0:1;
+    var an=baseName(a.name).indexOf(q)===0?0:1, bn2=baseName(b.name).indexOf(q)===0?0:1;
     if(an!==bn2) return an-bn2;
     return (a.no||"")<(b.no||"") ? -1 : 1;
   });
@@ -691,7 +727,7 @@ function renderCheck(){
   $("recent").innerHTML = recent.length ? recent.map(function(r){
     return '<li'+(r.pending?' class="pending"':'')+'>'+
       '<span class="when">'+fmtWhen(r.at)+'</span>'+
-      '<div class="body"><b>'+esc(r.name)+'</b><span class="sid">'+esc(r.no)+'</span>'+
+      '<div class="body"><b>'+esc(baseName(r.name))+'</b><span class="sid">'+esc(r.no)+'</span>'+
         '<div class="rsn">'+esc(r.reason)+(r.memo?" · "+esc(r.memo):"")+' <span class="who2">— '+esc(r.by)+'</span></div>'+
       '</div>'+
       (r.pending ? '<span class="undo" style="border:0">전송 중</span>'
@@ -762,7 +798,7 @@ function renderStats(){
   $("rank").innerHTML = ranked.length ? ranked.map(function(r,i){
     return '<li>'+
       '<span class="pos">'+(i+1)+'</span>'+
-      '<div class="bar"><div class="t"><b>'+esc(r.s.name)+'</b><span>'+esc(r.s.no)+(labelOf(r.s)?" · "+esc(labelOf(r.s)):"")+'</span></div>'+
+      '<div class="bar"><div class="t"><b>'+esc(baseName(r.s.name))+'</b><span>'+esc(r.s.no)+(labelOf(r.s)?" · "+esc(labelOf(r.s)):"")+'</span></div>'+
         '<div class="track"><i class="fill '+lvl(r.n)+'" style="width:'+Math.max(6,Math.round(r.n/max*100))+'%"></i></div></div>'+
       '<span class="num">'+r.n+'</span>'+
     '</li>';
@@ -778,9 +814,11 @@ function renderStats(){
 }
 
 function renderRoster(){
-  var total=0; students.forEach(function(s){ total+=(s.count||0); });
+  var total=0, exn=0;
+  students.forEach(function(s){ total+=(s.count||0); if(exemptOf(s.name)) exn++; });
   $("cntStudents").textContent=students.size;
   $("cntRecords").textContent=total;
+  $("cntExempt").textContent=exn+"명";
   $("syncedAt").textContent = syncedAt ? fmtDT(syncedAt) : "—";
   $("storeState").textContent = !hasBackend() ? "앱 주소로 접속해 주세요"
     : (booted ? "구글 스프레드시트 연결됨" : "연결 중…");
@@ -810,7 +848,7 @@ function openSheet(no){
 function drawSheet(err){
   var s=students.get(sheetNo);
   if(!s){ if($("sheet").open) $("sheet").close(); return; }
-  var c=s.count||0, hist=histCache[sheetNo];
+  var c=s.count||0, hist=histCache[sheetNo], ex=exemptOf(s.name);
   var histHtml;
   if(err) histHtml='<p class="note" style="color:var(--crit)">'+esc(err)+'</p>';
   else if(hist===undefined) histHtml='<p class="note">불러오는 중…</p>';
@@ -823,16 +861,18 @@ function drawSheet(err){
 
   $("sheetIn").innerHTML=
     '<div class="sheet-h"><span class="grab"></span>'+
-      '<div><h3>'+esc(s.name)+'</h3><div class="sm">'+esc(s.no)+(labelOf(s)?" · "+esc(labelOf(s)):"")+'</div></div>'+
+      '<div><h3>'+esc(baseName(s.name))+'</h3><div class="sm">'+esc(s.no)+(labelOf(s)?" · "+esc(labelOf(s)):"")+'</div></div>'+
       '<button class="close" type="button" data-act="closesheet" aria-label="닫기">✕</button></div>'+
     '<div class="sheet-b">'+
       '<div class="bigcount"><b style="'+(c>=3?"color:var(--crit)":(c>0?"color:var(--warn)":""))+'">'+c+'</b><span>회 누적 적발</span></div>'+
+      (ex ? exemptNote(ex, true) : "")+
       '<div class="block"><h4>사유 선택하여 기록</h4>'+
         '<div class="chips" id="rchips">'+reasons.map(function(r,i){
           return '<button class="chip" type="button" data-act="pickreason" data-v="'+esc(r)+'" aria-pressed="'+(i===0)+'">'+esc(r)+'</button>';
         }).join("")+'</div>'+
         '<input class="inp" id="memo" placeholder="메모 (선택) — 예: 3회째 지도, 담임 통보">'+
-        '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>'+
+        (ex ? '<button class="btn wide" type="button" data-act="record" data-force="1">그래도 적발 기록하기</button>'
+            : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
       '</div>'+
       '<div class="block"><h4>적발 이력'+(hist&&hist.length?" ("+hist.length+")":"")+'</h4>'+histHtml+'</div>'+
       (role==="admin" ? '<div class="admin">'+
@@ -927,6 +967,7 @@ function toast(msg, actionLabel, action){
 function doPlus(no, btn){
   var s=students.get(no);
   if(!s || busy.has(no)) return;
+  if(exemptOf(s.name)){ toast("교복 지도 대상이 아닌 학생입니다."); return; }
   busy.add(no); if(btn) btn.disabled=true;
 
   var tmp={id:"tmp_"+rid(), at:new Date().toISOString(), no:no, name:s.name, grade:s.grade, klass:s.klass,
@@ -944,7 +985,7 @@ function doPlus(no, btn){
     if(histCache[no]) histCache[no].unshift({id:d.id, at:d.at, reason:tmp.reason, memo:"", by:tmp.by});
     render();
     if(sheetNo===no && $("sheet").open) drawSheet();
-    toast(s.name+" 적발 기록 · 누적 "+d.count+"회", "취소", function(){ doUndo(no, d.id); });
+    toast(baseName(s.name)+" 적발 기록 · 누적 "+d.count+"회", "취소", function(){ doUndo(no, d.id); });
     done();
   }, function(e){
     s.count=Math.max(0,(s.count||1)-1);
@@ -992,6 +1033,15 @@ document.addEventListener("click", function(ev){
     t.setAttribute("aria-pressed","true"); return;
   }
   if(act==="record"){
+    var stx=students.get(sheetNo); if(!stx) return;
+    var exx=exemptOf(stx.name);
+    if(exx && !forceOk){
+      askConfirm("교복 지도 대상이 아닙니다",
+        "<b>"+esc(baseName(stx.name))+"</b> 학생은 <b>"+exx.kind+"</b>으로 교복 지도 대상에서 제외됩니다.<br>그래도 적발 기록을 남길까요?", "기록", false)
+        .then(function(yes){ if(!yes) return; forceOk=true; t.click(); forceOk=false; });
+      return;
+    }
+    forceOk=false;
     var chip=$("rchips").querySelector('[aria-pressed="true"]');
     var reason=chip?chip.getAttribute("data-v"):reasons[0];
     var memo=($("memo")||{}).value||"";
@@ -1005,14 +1055,14 @@ document.addEventListener("click", function(ev){
       logs.unshift({id:d.id, at:d.at, no:no, name:s.name, grade:s.grade, klass:s.klass, reason:reason, memo:e.memo, by:e.by});
       if($("memo")) $("memo").value="";
       render(); drawSheet();
-      toast(s.name+" 적발 기록 · 누적 "+d.count+"회");
+      toast(baseName(s.name)+" 적발 기록 · 누적 "+d.count+"회");
     }, function(e){ toast(errMsg(e)); t.disabled=false; });
     return;
   }
   if(act==="editstudent"){ editStudent(sheetNo); return; }
   if(act==="delstudent"){
     var st=students.get(sheetNo); if(!st) return;
-    askConfirm("명단에서 삭제","<b>"+esc(st.name)+"</b> ("+esc(st.no)+") 학생을 명단에서 지웁니다. 적발 기록 "+(st.count||0)+"건도 함께 삭제되며 되돌릴 수 없습니다.","삭제",true)
+    askConfirm("명단에서 삭제","<b>"+esc(baseName(st.name))+"</b> ("+esc(st.no)+") 학생을 명단에서 지웁니다. 적발 기록 "+(st.count||0)+"건도 함께 삭제되며 되돌릴 수 없습니다.","삭제",true)
       .then(function(yes){
         if(!yes) return;
         call("del",{no:st.no}).then(function(){
@@ -1049,9 +1099,10 @@ $("pinBtn").addEventListener("click", function(){ askPin(false); });
 function previewBulk(){
   var el=$("bulkPreview"), raw=$("bulk").value;
   if(!raw.trim()){ el.textContent=""; $("bulkGo").disabled=true; return; }
-  var r=parseRoster(raw), nEw=0, up=0;
-  r.ok.forEach(function(s){ if(students.has(s.no)) up++; else nEw++; });
+  var r=parseRoster(raw), nEw=0, up=0, exn=0;
+  r.ok.forEach(function(s){ if(students.has(s.no)) up++; else nEw++; if(exemptOf(s.name)) exn++; });
   el.innerHTML='읽은 학생 <b style="color:var(--ink)">'+r.ok.length+'명</b> · 새로 추가 '+nEw+'명 · 이름 갱신 '+up+'명'+
+    (exn ? ' · <span style="color:var(--accent-2)">지도 제외 '+exn+'명</span>' : "")+
     (r.bad.length?' · <span style="color:var(--crit)">인식 못한 줄 '+r.bad.length+'개 ('+r.bad.slice(0,2).map(function(b){return b.line+"행";}).join(", ")+'…)</span>':"");
   $("bulkGo").disabled = r.ok.length===0;
 }
