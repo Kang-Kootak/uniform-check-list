@@ -149,6 +149,14 @@ ul{margin:0;padding:0;list-style:none}
 .rownote .sub{display:block;margin-top:4px;color:var(--muted);font-size:12.5px}
 .rownote.done{background:var(--ok-soft);color:var(--ok);
   border-color:color-mix(in srgb,var(--ok) 30%,transparent)}
+.chips.picks{margin-top:8px}
+.chips.picks .chip .no{color:var(--muted);font-family:var(--font-mono);font-size:12px;margin-left:5px}
+input[type="date"].inp{min-height:46px}
+.log .tagx{display:inline-block;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:999px;
+  background:var(--accent-soft);color:var(--accent-2);margin-left:6px;letter-spacing:.02em;vertical-align:1px}
+.log .tagx.soon{background:var(--warn-soft);color:var(--warn)}
+.log .tagx.off{background:var(--surface-2);color:var(--muted)}
+.log li.past{opacity:.6}
 
 /* ---------- log list ---------- */
 .log li{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-bottom:1px solid var(--line-2)}
@@ -391,10 +399,29 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
       </div>
 
       <div class="card pad" style="display:flex;flex-direction:column;gap:10px">
-        <div class="sect-h" style="margin-bottom:2px"><h2>적발 사유 항목</h2></div>
-        <p class="note">첫 번째 항목이 <b>+1 버튼</b>을 눌렀을 때 기본으로 기록되는 사유입니다. 한 줄에 하나씩 적어주세요.</p>
-        <textarea class="inp" id="reasons" spellcheck="false" style="min-height:104px"></textarea>
-        <button class="btn wide" id="reasonsGo" type="button">사유 저장</button>
+        <div class="sect-h" style="margin-bottom:2px"><h2>면제 기간 등록</h2></div>
+        <p class="note">부상 등 불가피한 사유로 일정 기간 교복 지도에서 빼야 할 때 씁니다. 기간 중에는 검색해도 <b>+1</b> 버튼 대신 면제 안내가 표시됩니다.</p>
+        <div>
+          <label class="fl" for="exQ">학생</label>
+          <input class="inp" id="exQ" placeholder="이름 또는 학번으로 찾기" autocomplete="off">
+          <div class="chips picks" id="exPick"></div>
+        </div>
+        <div>
+          <label class="fl" for="exReason">면제 사유</label>
+          <input class="inp" id="exReason" placeholder="예: 발목 부상, 깁스 착용" maxlength="100">
+        </div>
+        <div style="display:flex;gap:8px">
+          <div style="flex:1"><label class="fl" for="exFrom">시작일</label><input class="inp" id="exFrom" type="date"></div>
+          <div style="flex:1"><label class="fl" for="exTo">종료일</label><input class="inp" id="exTo" type="date"></div>
+        </div>
+        <button class="btn primary wide" id="exGo" type="button">면제 등록</button>
+      </div>
+
+      <div class="card">
+        <div class="pad" style="padding-bottom:0">
+          <div class="sect-h" style="margin-bottom:2px"><h2>면제 명단</h2><span class="sub" id="exSub"></span></div>
+        </div>
+        <ul class="log" id="exList"></ul>
       </div>
 
       <div class="card pad" style="display:flex;flex-direction:column;gap:10px">
@@ -436,10 +463,11 @@ var DEFAULT_REASONS = ["교복 미착용","생활복·사복 혼용","명찰 미
 var WD = ["일","월","화","수","목","금","토"];
 var CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
 var LS_DATA = "gyobok.students.v1", LS_ME = "gyobok.me", LS_CID = "gyobok.cid",
-    LS_REASONS = "gyobok.reasons.v1", LS_BANNER = "gyobok.banner.v1";
+    LS_REASONS = "gyobok.reasons.v1", LS_EXEMPT = "gyobok.exempts.v1";
 
 /* ============ 상태 ============ */
 var students = new Map();   // sid -> {sid,no,name,grade,klass,num,count,lastAt,history[]}
+var exempts = [];           // 면제 기간 [{id,no,name,reason,from,to,by}]
 var reasons = DEFAULT_REASONS.slice();
 var db = null, backend = "local", dbReady = false;
 var tab = "check", period = "all", klassFilter = "all", shown = 40;
@@ -534,6 +562,68 @@ function slotRows(times){
   }
   return rows.join("");
 }
+/* 면제 기간 — 부상 등으로 일정 기간 지도 대상에서 제외 */
+function fmtDay(ymd){
+  if(!ymd) return "";
+  var p=String(ymd).split("-");
+  return p.length>=3 ? (+p[1])+"/"+(+p[2]) : String(ymd);
+}
+function periodExemptOf(no, dayk){
+  dayk = dayk || todayKey();
+  for(var i=0;i<exempts.length;i++){
+    var e=exempts[i];
+    if(e.no!==no) continue;
+    if(e.from && dayk < e.from) continue;
+    if(e.to && dayk > e.to) continue;
+    return e;
+  }
+  return null;
+}
+function exStatus(e){
+  var t=todayKey();
+  if(e.from && t < e.from) return "예정";
+  if(e.to && t > e.to) return "종료";
+  return "진행 중";
+}
+function periodNote(pe, big){
+  var span=fmtDay(pe.from)+" ~ "+fmtDay(pe.to);
+  return '<div class="rownote'+(big?" big":"")+'">'+
+    '<b>면제 기간</b> <span class="sport">'+esc(pe.reason)+'</span> ／ 교복지도 대상 아님'+
+    '<span class="sub">'+esc(span)+(big&&pe.by?" · 등록 "+esc(pe.by):"")+'</span>'+
+  '</div>';
+}
+
+/* 이 학생을 지금 체크할 수 있는가 — 막힌 이유를 한 곳에서 판단 */
+function statusOf(s){
+  var ex=exemptOf(s.name);
+  if(ex) return {
+    kind:"exempt",
+    html:function(big){ return exemptNote(ex, big); },
+    btn:"그래도 적발 기록하기",
+    title:"교복 지도 대상이 아닙니다",
+    body:function(nm){ return "<b>"+nm+"</b> 학생은 <b>"+esc(ex.kind)+"</b>으로 교복 지도 대상에서 제외됩니다.<br>그래도 적발 기록을 남길까요?"; },
+    toast:function(nm){ return nm+" 학생은 교복 지도 대상이 아닙니다."; }
+  };
+  var pe=periodExemptOf(s.no);
+  if(pe) return {
+    kind:"period",
+    html:function(big){ return periodNote(pe, big); },
+    btn:"그래도 적발 기록하기",
+    title:"면제 기간인 학생입니다",
+    body:function(nm){ return "<b>"+nm+"</b> 학생은 <b>"+esc(pe.reason)+"</b> 사유로 "+esc(fmtDay(pe.from)+" ~ "+fmtDay(pe.to))+" 교복 지도에서 면제됩니다.<br>그래도 적발 기록을 남길까요?"; },
+    toast:function(nm){ return nm+" 학생은 "+fmtDay(pe.from)+"~"+fmtDay(pe.to)+" 면제 기간입니다."; }
+  };
+  var dn=checkedToday(s);
+  if(dn) return {
+    kind:"done",
+    html:function(big){ return checkNote(dn, big); },
+    btn:"그래도 한 번 더 기록하기",
+    title:"오늘 이미 체크된 학생입니다",
+    body:function(nm){ return "<b>"+nm+"</b> 학생은 <b>"+whenToday(dn)+"</b>에 이미 체크됐습니다.<br>하루 한 번만 기록하는 것이 원칙입니다. 그래도 한 번 더 기록할까요?"; },
+    toast:function(nm){ return nm+" 학생은 "+whenToday(dn)+"에 이미 체크됐습니다."; }
+  };
+  return null;
+}
 function lvl(n){ return n<=0?"":(n<3?"w":"c"); }
 function labelOf(s){
   if(s.grade) return s.grade+"학년 "+s.klass+"반 "+s.num+"번";
@@ -581,11 +671,14 @@ function parseRoster(text){
 function saveLocal(){
   lsSet(LS_DATA, Array.from(students.values()));
 }
+function saveExemptsLocal(){ lsSet(LS_EXEMPT, exempts); }
 function loadLocal(){
   var arr = lsGet(LS_DATA, []);
   if(Array.isArray(arr)) arr.forEach(function(s){ if(s && s.sid) students.set(s.sid, s); });
   var r = lsGet(LS_REASONS, null);
   if(Array.isArray(r) && r.length) reasons = r;
+  var x = lsGet(LS_EXEMPT, null);
+  if(Array.isArray(x)) exempts = x;
 }
 
 function withLease(ref, fn){
@@ -690,6 +783,19 @@ function removeRecord(sid, entryId){
     s.history=h; s.count=h.length; s.lastAt = h.length? h[h.length-1].at : null; return s;
   });
 }
+function addExempt(rec){
+  if(backend!=="db"){
+    exempts = exempts.concat([rec]); saveExemptsLocal(); render(); return Promise.resolve();
+  }
+  return retry(function(){ return db.doc("exempts/"+rec.id).set(rec); });
+}
+function delExempt(id){
+  if(backend!=="db"){
+    exempts = exempts.filter(function(e){ return e.id!==id; }); saveExemptsLocal(); render(); return Promise.resolve();
+  }
+  return retry(function(){ return db.doc("exempts/"+id).delete(); });
+}
+
 function saveReasons(list){
   reasons = list; lsSet(LS_REASONS, list);
   if(backend==="db") return retry(function(){ return db.doc("meta/settings").set({reasons:list, updatedAt:new Date().toISOString()}); });
@@ -718,6 +824,13 @@ function connect(){
       toast(dbErr(e));
       if(e && (e.code==="revoked"||e.code==="not_granted")){ backend="local"; setStore("local"); }
     });
+    db.collection("exempts").onSnapshot(function(snap){
+      exempts = snap.docs.map(function(d){
+        var v = d.data() || {}; if(!v.id) v.id = d.id; return v;
+      }).sort(function(a,b){ return a.from < b.from ? 1 : (a.from > b.from ? -1 : 0); });
+      lsSet(LS_EXEMPT, exempts);
+      render();
+    }, function(){});
     db.doc("meta/settings").onSnapshot(function(snap){
       var v = snap.exists ? snap.data() : null;
       if(v && Array.isArray(v.reasons) && v.reasons.length){ reasons = v.reasons; lsSet(LS_REASONS, reasons); render(); }
@@ -799,18 +912,18 @@ function renderBanner(){
 var dbReadyChecked=false;
 
 function studentRow(s){
-  var c=s.count||0, ex=exemptOf(s.name), done=ex?null:checkedToday(s), nm=baseName(s.name);
+  var c=s.count||0, st=statusOf(s), nm=baseName(s.name);
   var meta=['<span class="sid">'+esc(s.no)+'</span>'];
   var lb=labelOf(s); if(lb) meta.push("<span>"+esc(lb)+"</span>");
-  if(!ex && !done && s.lastAt) meta.push("<span>최근 "+fmtShort(s.lastAt)+"</span>");
+  if(!st && s.lastAt) meta.push("<span>최근 "+fmtShort(s.lastAt)+"</span>");
   var idbtn='<button class="idbtn" type="button" data-act="open" data-sid="'+esc(s.sid)+'">'+
       '<div class="nm">'+esc(nm)+'</div>'+
       '<div class="meta">'+meta.join('<span aria-hidden="true">·</span>')+'</div>'+
     '</button>';
-  if(ex || done){
+  if(st){
     return '<div class="row noted" data-sid="'+esc(s.sid)+'">'+
       '<div class="noted-top">'+idbtn+(c>0?'<span class="cnt '+lvl(c)+'">'+c+'회</span>':"")+'</div>'+
-      (ex ? exemptNote(ex) : checkNote(done))+
+      st.html(false)+
     '</div>';
   }
   return '<div class="row" data-sid="'+esc(s.sid)+'">'+idbtn+
@@ -945,11 +1058,11 @@ function renderStats(){
 
 function renderRoster(){
   var total=0, exn=0;
-  students.forEach(function(s){ total += (s.count||0); if(exemptOf(s.name)) exn++; });
+  students.forEach(function(s){ total += (s.count||0); if(exemptOf(s.name) || periodExemptOf(s.no)) exn++; });
   $("cntStudents").textContent = students.size;
   $("cntRecords").textContent = total;
   $("cntExempt").textContent = exn+"명";
-  if(document.activeElement !== $("reasons")) $("reasons").value = reasons.join("\n");
+  renderExempts();
 }
 
 /* ============ 시트 ============ */
@@ -962,7 +1075,7 @@ function openSheet(sid){
 }
 function drawSheet(){
   var s = students.get(sheetSid); if(!s){ $("sheet").close(); return; }
-  var c = s.count||0, ex = exemptOf(s.name), done = ex?null:checkedToday(s);
+  var c = s.count||0, st = statusOf(s);
   var hist = (s.history||[]).slice().reverse();
   $("sheetIn").innerHTML =
     '<div class="sheet-h"><span class="grab"></span>'+
@@ -970,15 +1083,14 @@ function drawSheet(){
       '<button class="close" type="button" data-act="closesheet" aria-label="닫기">✕</button></div>'+
     '<div class="sheet-b">'+
       '<div class="bigcount"><b class="'+(c>=3?"crit":"")+'" style="'+(c>=3?"color:var(--crit)":(c>0?"color:var(--warn)":""))+'">'+c+'</b><span>회 누적 적발</span></div>'+
-      (ex ? exemptNote(ex, true) : (done ? checkNote(done, true) : ""))+
+      (st ? st.html(true) : "")+
       '<div class="block"><h4>사유 선택하여 기록</h4>'+
         '<div class="chips" id="rchips">'+reasons.map(function(r,i){
           return '<button class="chip" type="button" data-act="pickreason" data-v="'+esc(r)+'" aria-pressed="'+(i===0)+'">'+esc(r)+'</button>';
         }).join("")+'</div>'+
         '<input class="inp" id="memo" placeholder="메모 (선택) — 예: 3회째 지도, 담임 통보">'+
-        (ex || done
-          ? '<button class="btn wide" type="button" data-act="record" data-force="1">'+(ex?"그래도 적발 기록하기":"그래도 한 번 더 기록하기")+'</button>'
-          : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
+        (st ? '<button class="btn wide" type="button" data-act="record" data-force="1">'+st.btn+'</button>'
+            : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
       '</div>'+
       '<div class="block"><h4>적발 이력 '+(hist.length?"("+hist.length+")":"")+'</h4>'+
         (hist.length ? '<ul class="hist">'+hist.map(function(e){
@@ -1052,6 +1164,64 @@ function editStudent(sid){
   };
 }
 
+/* ============ 면제 기간 ============ */
+var exSel = null;
+function renderExPick(){
+  var q = $("exQ").value.trim(), box = $("exPick");
+  if(!q || (exSel && q === exLabel(exSel))){ box.innerHTML = ""; return; }
+  exSel = null;
+  var list = searchList(q).slice(0, 6);
+  box.innerHTML = list.length
+    ? list.map(function(s){
+        return '<button class="chip" type="button" data-act="expick" data-sid="'+esc(s.no)+'">'+
+          esc(baseName(s.name))+'<span class="no">'+esc(s.no)+'</span></button>';
+      }).join("")
+    : '<p class="note">찾는 학생이 없습니다. 이름 또는 학번을 확인해 주세요.</p>';
+}
+function exLabel(s){ return baseName(s.name)+" ("+s.no+")"; }
+function pickExempt(no){
+  var s = students.get(no); if(!s) return;
+  exSel = s;
+  $("exQ").value = exLabel(s);
+  $("exPick").innerHTML = "";
+  $("exReason").focus();
+}
+function resetExForm(){
+  exSel = null;
+  $("exQ").value = ""; $("exReason").value = "";
+  $("exPick").innerHTML = "";
+  $("exFrom").value = todayKey(); $("exTo").value = "";
+}
+function renderExempts(){
+  var box = $("exList"); if(!box) return;
+  var live = 0;
+  for(var i=0;i<exempts.length;i++) if(exStatus(exempts[i])==="진행 중") live++;
+  $("exSub").textContent = exempts.length ? "진행 중 "+live+" · 전체 "+exempts.length : "";
+  var show = exempts.slice(0, 40);
+  box.innerHTML = show.length ? show.map(function(e){
+    var st = exStatus(e);
+    var cls = st==="진행 중" ? "" : (st==="예정" ? "soon" : "off");
+    return '<li'+(st==="종료"?' class="past"':'')+'>'+
+      '<div class="body"><b>'+esc(baseName(e.name))+'</b><span class="sid">'+esc(e.no)+'</span>'+
+        '<span class="tagx '+cls+'">'+st+'</span>'+
+        '<div class="rsn">'+esc(e.reason)+' · '+esc(fmtDay(e.from)+" ~ "+fmtDay(e.to))+
+          (e.by ? ' <span class="who2">— '+esc(e.by)+'</span>' : "")+'</div>'+
+      '</div>'+
+      '<button class="undo" type="button" data-act="exdel" data-eid="'+esc(e.id)+'">삭제</button>'+
+    '</li>';
+  }).join("") + (exempts.length>show.length ? '<li><div class="note" style="padding:10px 14px">외 '+(exempts.length-show.length)+'건은 스프레드시트에서 확인하세요.</div></li>' : "")
+    : '<li><div class="empty" style="width:100%"><strong>등록된 면제가 없습니다</strong>부상 등으로 지도에서 빼야 할 학생이 있으면 위에서 등록하세요.</div></li>';
+}
+function readExForm(){
+  if(!exSel){ toast("학생을 먼저 선택해 주세요."); $("exQ").focus(); return null; }
+  var reason = $("exReason").value.trim();
+  if(!reason){ toast("면제 사유를 입력해 주세요."); $("exReason").focus(); return null; }
+  var from = $("exFrom").value, to = $("exTo").value;
+  if(!from || !to){ toast("시작일과 종료일을 모두 선택해 주세요."); (from?$("exTo"):$("exFrom")).focus(); return null; }
+  if(from > to){ toast("종료일이 시작일보다 빠릅니다."); $("exTo").focus(); return null; }
+  return {no:exSel.no, name:exSel.name, reason:reason, from:from, to:to};
+}
+
 /* ============ 토스트 ============ */
 var toastTimer=null;
 function toast(msg, actionLabel, action){
@@ -1117,9 +1287,8 @@ function exportLog(){
 function doPlus(sid, btn){
   if(busy.has(sid)) return;
   if(!students.has(sid)) return;
-  if(exemptOf(students.get(sid).name)){ toast("교복 지도 대상이 아닌 학생입니다."); return; }
-  var dn = checkedToday(students.get(sid));
-  if(dn){ toast(baseName(students.get(sid).name)+" 학생은 "+whenToday(dn)+"에 이미 체크됐습니다."); return; }
+  var st0 = statusOf(students.get(sid));
+  if(st0){ toast(st0.toast(baseName(students.get(sid).name))); return; }
   busy.add(sid); if(btn) btn.disabled=true;
   var s = students.get(sid);
   addRecord(sid, reasons[0]).then(function(entry){
@@ -1159,13 +1328,9 @@ document.addEventListener("click", function(ev){
   }
   if(act==="record"){
     var stx=students.get(sheetSid); if(!stx) return;
-    var exx=exemptOf(stx.name), dnx=exx?null:checkedToday(stx);
-    if((exx||dnx) && !forceOk){
-      askConfirm(
-        exx ? "교복 지도 대상이 아닙니다" : "오늘 이미 체크된 학생입니다",
-        exx ? "<b>"+esc(baseName(stx.name))+"</b> 학생은 <b>"+exx.kind+"</b>으로 교복 지도 대상에서 제외됩니다.<br>그래도 적발 기록을 남길까요?"
-            : "<b>"+esc(baseName(stx.name))+"</b> 학생은 <b>"+whenToday(dnx)+"</b>에 이미 체크됐습니다.<br>하루 한 번만 기록하는 것이 원칙입니다. 그래도 한 번 더 기록할까요?",
-        "기록", false)
+    var stt=statusOf(stx);
+    if(stt && !forceOk){
+      askConfirm(stt.title, stt.body(esc(baseName(stx.name))), "기록", false)
         .then(function(yes){ if(!yes) return; forceOk=true; t.click(); forceOk=false; });
       return;
     }
@@ -1174,7 +1339,7 @@ document.addEventListener("click", function(ev){
     var reason = chip ? chip.getAttribute("data-v") : reasons[0];
     var memo = ($("memo")||{}).value || "";
     var sid2 = sheetSid;
-    addRecord(sid2, reason, memo.trim(), !!(exx||dnx)).then(function(){
+    addRecord(sid2, reason, memo.trim(), !!stt).then(function(){
       var st=students.get(sid2)||{};
       toast(baseName(st.name)+" 적발 기록 · 누적 "+(st.count||0)+"회");
       if($("memo")) $("memo").value="";
@@ -1190,6 +1355,16 @@ document.addEventListener("click", function(ev){
         if(!yes) return;
         delStudent(s.sid).then(function(){ $("sheet").close(); toast("삭제했습니다."); }, function(e){ toast(dbErr(e)); });
       });
+    return;
+  }
+  if(act==="expick"){ pickExempt(t.getAttribute("data-sid")); return; }
+  if(act==="exdel"){
+    var eid=t.getAttribute("data-eid");
+    var rec=null;
+    for(var i=0;i<exempts.length;i++) if(exempts[i].id===eid) rec=exempts[i];
+    if(!rec) return;
+    askConfirm("면제 삭제","<b>"+esc(baseName(rec.name))+"</b> 학생의 면제(<b>"+esc(rec.reason)+"</b>, "+esc(fmtDay(rec.from)+" ~ "+fmtDay(rec.to))+")를 지웁니다.","삭제",true)
+      .then(function(yes){ if(!yes) return; delExempt(eid).then(function(){ toast("면제를 삭제했습니다."); }, function(e){ toast(dbErr(e)); }); });
     return;
   }
   if(act==="period"){ period = t.getAttribute("data-v"); renderStats(); return; }
@@ -1268,10 +1443,14 @@ $("oneGo").addEventListener("click", function(){
     $("oneNo").value=""; $("oneName").value=""; $("oneNo").focus(); render();
   }, function(e){ toast(dbErr(e)); });
 });
-$("reasonsGo").addEventListener("click", function(){
-  var list = $("reasons").value.split(/\r?\n/).map(function(s){ return s.trim(); }).filter(Boolean);
-  if(!list.length){ toast("사유를 최소 한 개 이상 남겨주세요."); return; }
-  saveReasons(list).then(function(){ toast("사유 항목을 저장했습니다."); render(); }, function(e){ toast(dbErr(e)); });
+$("exQ").addEventListener("input", renderExPick);
+$("exGo").addEventListener("click", function(){
+  var v = readExForm(); if(!v) return;
+  v.id = rid(); v.by = me() || "미기재"; v.at = new Date().toISOString();
+  addExempt(v).then(function(){
+    toast(baseName(v.name)+" 학생을 "+fmtDay(v.from)+"~"+fmtDay(v.to)+" 면제로 등록했습니다.");
+    resetExForm(); render();
+  }, function(e){ toast(dbErr(e)); });
 });
 $("resetCounts").addEventListener("click", function(){
   var total=0; students.forEach(function(s){ total+=(s.count||0); });
@@ -1316,6 +1495,7 @@ window.addEventListener("scroll", function(){
 
 /* ============ 시작 ============ */
 loadLocal();
+resetExForm();
 render();
 renderNow();
 setInterval(renderNow, 1000);

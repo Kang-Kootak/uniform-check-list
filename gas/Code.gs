@@ -6,9 +6,11 @@
  * 자세한 순서는 저장소의 gas/설치_방법.md 참고.
  */
 
-var SH_R = '명단', SH_L = '기록', SH_C = '설정';
+var SH_R = '명단', SH_L = '기록', SH_C = '설정', SH_E = '면제';
 var HDR_R = ['학번', '이름', '학년', '반', '번호', '누적횟수', '최근적발'];
 var HDR_L = ['기록ID', '일시', '학번', '이름', '학년', '반', '사유', '메모', '기록자'];
+var HDR_E = ['면제ID', '학번', '이름', '사유', '시작일', '종료일', '등록자', '등록일시'];
+var EXEMPT_LIMIT = 500;
 var DEF_REASONS = '교복 미착용, 생활복·사복 혼용, 명찰 미부착, 외투 규정 위반, 기타';
 var LOG_LIMIT = 1000;      // 앱이 한 번에 받아가는 최근 기록 수
 var CFG_TTL = 30;          // 설정 캐시 (초). PIN을 바꾸면 최대 이만큼 뒤에 적용됩니다.
@@ -44,6 +46,10 @@ function 초기설정() {
   ls.getRange(1, 1, 1, HDR_L.length).setFontWeight('bold').setBackground('#e2ecf6');
   ls.setFrozenRows(1);
   ls.setColumnWidth(1, 90); ls.setColumnWidth(2, 150); ls.setColumnWidth(7, 160); ls.setColumnWidth(8, 200);
+
+  var es = ensureExemptSheet_(ss);
+  es.getRange(1, 1, 1, HDR_E.length).setFontWeight('bold').setBackground('#e2ecf6');
+  es.setColumnWidth(1, 90); es.setColumnWidth(4, 220); es.setColumnWidth(8, 150);
 
   var cs = ss.getSheetByName(SH_C) || ss.insertSheet(SH_C);
   if (cs.getLastRow() === 0) {
@@ -128,6 +134,8 @@ function api(p) {
       case 'put':     return admin ? ok_(putStudent_(p)) : deny_();
       case 'del':     return admin ? ok_(delStudent_(normNo_(p.no))) : deny_();
       case 'reasons': return admin ? ok_(saveReasons_(p.list || [])) : deny_();
+      case 'ex_add':  return admin ? ok_(exemptAdd_(p)) : deny_();
+      case 'ex_del':  return admin ? ok_(exemptDel_(String(p.id || ''))) : deny_();
       case 'reset':   return admin ? ok_(resetCounts_()) : deny_();
       case 'wipe':    return admin ? ok_(wipeRoster_()) : deny_();
       case 'backup':  return admin ? ok_({ id: 백업사본() }) : deny_();
@@ -188,6 +196,7 @@ function boot_(role) {
     role: role,
     students: students,
     logs: recentLogs_(LOG_LIMIT),
+    exempts: readExempts_(),
     reasons: reasons_(cfg),
     school: String(cfg['학교명'] || '').trim(),
     pinSet: !!(String(cfg['기록PIN'] || '').trim() || String(cfg['관리PIN'] || '').trim()),
@@ -233,6 +242,83 @@ function history_(no) {
   }
   out.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
   return out;
+}
+
+/** 면제 시트는 나중에 추가된 기능이라, 없으면 그때 만든다 */
+function ensureExemptSheet_(ss) {
+  var sh = ss.getSheetByName(SH_E);
+  if (!sh) sh = ss.insertSheet(SH_E);
+  if (sh.getLastRow() === 0 || String(sh.getRange(1, 1).getValue()).trim() !== HDR_E[0]) {
+    sh.getRange(1, 1, 1, HDR_E.length).setValues([HDR_E]);
+    sh.setFrozenRows(1);
+  }
+  sh.getRange(2, 5, Math.max(sh.getMaxRows() - 1, 1), 2).setNumberFormat('@');  // 시작일·종료일은 글자로
+  return sh;
+}
+
+function readExempts_() {
+  var es;
+  try { es = ensureExemptSheet_(ss_()); } catch (e) { return []; }
+  var last = es.getLastRow();
+  if (last < 2) return [];
+  var from = Math.max(2, last - EXEMPT_LIMIT + 1);
+  var vals = es.getRange(from, 1, last - from + 1, HDR_E.length).getValues();
+  var out = [];
+  for (var i = 0; i < vals.length; i++) {
+    var no = normNo_(vals[i][1]);
+    if (!no) continue;
+    out.push({
+      id: String(vals[i][0]), no: no, name: String(vals[i][2] || ''),
+      reason: String(vals[i][3] || ''), from: dstr_(vals[i][4]), to: dstr_(vals[i][5]),
+      by: String(vals[i][6] || '')
+    });
+  }
+  out.sort(function (a, b) { return a.from < b.from ? 1 : (a.from > b.from ? -1 : 0); });
+  return out;
+}
+
+function exemptAdd_(p) {
+  var no = normNo_(p.no);
+  var reason = String(p.reason || '').trim().slice(0, 100);
+  var from = dstr_(p.from), to = dstr_(p.to);
+  if (!no) throw new Error('학생을 선택해 주세요.');
+  if (!reason) throw new Error('면제 사유를 입력해 주세요.');
+  if (!from || !to) throw new Error('시작일과 종료일을 모두 선택해 주세요.');
+  if (from > to) throw new Error('종료일이 시작일보다 빠릅니다.');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('잠시 후 다시 시도해 주세요.');
+  try {
+    var ss = ss_(), rs = sheet_(ss, SH_R), es = ensureExemptSheet_(ss);
+    var row = rosterIndex_(rs)[no];
+    if (!row) throw new Error('명단에 없는 학번입니다.');
+    var name = String(rs.getRange(row, 2).getValue() || '');
+    var id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+    es.appendRow([id, no, name, reason, from, to, String(p.by || '').slice(0, 40), new Date()]);
+    bumpRev_();
+    return { id: id, no: no, name: name, reason: reason, from: from, to: to };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function exemptDel_(id) {
+  if (!id) throw new Error('삭제할 면제를 찾지 못했습니다.');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('잠시 후 다시 시도해 주세요.');
+  try {
+    var es = ensureExemptSheet_(ss_());
+    var last = es.getLastRow();
+    if (last >= 2) {
+      var vals = es.getRange(2, 1, last - 1, 1).getValues();
+      for (var i = vals.length - 1; i >= 0; i--) {
+        if (String(vals[i][0]) === id) { es.deleteRow(i + 2); break; }
+      }
+    }
+    bumpRev_();
+    return { id: id };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /* ─────────────────────────── 쓰기 ─────────────────────────── */
@@ -571,6 +657,19 @@ function iso_(v) {
   var d = (v instanceof Date) ? v : new Date(v);
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
+
+/** 무엇이 들어와도 yyyy-MM-dd 문자열로 */
+function dstr_(v) {
+  if (!v && v !== 0) return '';
+  if (v instanceof Date) {
+    return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, tz_(), 'yyyy-MM-dd');
+  }
+  var t = String(v).trim();
+  var m = /^(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})/.exec(t);
+  if (m) return m[1] + '-' + p2_(m[2]) + '-' + p2_(m[3]);
+  return t.slice(0, 10);
+}
+function p2_(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
 
 /** 스프레드시트 시간대 기준으로 같은 날인지 */
 function sameDay_(a, b) {
