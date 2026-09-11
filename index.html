@@ -1440,11 +1440,23 @@ function resetAdForm(){
   renderAdReasons();
   showAdNow(); $("adHint").textContent = "";
 }
+var ADJ_NONE_NOTE = "횟수를 맞추면 학번·이름·날짜·사유가 여기에 남습니다.";
+var ADJ_OLD_NOTE  = "한 달이 지난 기록은 목록에서만 감춰지고 그대로 보관됩니다.";
+var ADJ_MORE_NOTE = "최근 한 달 안의 5건까지만 보여드립니다. 나머지도 그대로 보관되어 있습니다.";
+var ADJ_SHOW = 5;     // 한 화면에 보여줄 최대 건수
+/** 한 달 전 시각 — 이보다 오래된 조정 기록은 목록에 내지 않는다 */
+function adjCutoff(){
+  var d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  return d.toISOString();
+}
 function renderAdjusts(){
   var box = $("adList"); if(!box) return;
-  $("adSub").textContent = adjusts.length ? adjusts.length+"건" : "";
-  var show = adjusts.slice(0, 20);
-  box.innerHTML = show.length ? show.map(function(a){
+  var cut = adjCutoff();
+  var recent = adjusts.filter(function(a){ return (a.at || "") >= cut; });
+  var show = recent.slice(0, ADJ_SHOW);
+  $("adSub").textContent = recent.length ? "최근 한 달 "+recent.length+"건" : "";
+  var rows = show.map(function(a){
     return '<li>'+
       '<span class="when">'+fmtWhen(a.at)+'</span>'+
       '<div class="body"><b>'+esc(baseName(a.name))+'</b><span class="sid">'+esc(a.no)+'</span>'+
@@ -1453,8 +1465,15 @@ function renderAdjusts(){
           (a.by ? ' <span class="who2">— '+esc(a.by)+'</span>' : "")+'</div>'+
       '</div>'+
     '</li>';
-  }).join("") + (adjusts.length>show.length ? '<li><div class="note" style="padding:10px 14px">외 '+(adjusts.length-show.length)+'건은 스프레드시트의 <b>조정</b> 시트에서 확인하세요.</div></li>' : "")
-    : '<li><div class="empty" style="width:100%"><strong>조정한 기록이 없습니다</strong>횟수를 맞추면 학번·이름·날짜·사유가 여기와 스프레드시트에 함께 남습니다.</div></li>';
+  }).join("");
+  if(!show.length){
+    box.innerHTML = '<li><div class="empty" style="width:100%">'+
+      (adjusts.length ? '<strong>최근 한 달 안에 조정한 기록이 없습니다</strong>'+ADJ_OLD_NOTE
+                      : '<strong>조정한 기록이 없습니다</strong>'+ADJ_NONE_NOTE)+'</div></li>';
+    return;
+  }
+  box.innerHTML = rows + (adjusts.length > show.length
+    ? '<li><div class="note" style="padding:10px 14px">'+ADJ_MORE_NOTE+'</div></li>' : "");
 }
 
 /* ============ 선도위원회 기준 ============ */
