@@ -13,6 +13,7 @@ var HDR_E = ['면제ID', '학번', '이름', '사유', '시작일', '종료일',
 var EXEMPT_LIMIT = 500;
 var HDR_J = ['조정ID', '일시', '학번', '이름', '이전횟수', '조정후횟수', '사유', '처리자', '메모'];
 var ADJUST_LIMIT = 300;
+var ADJUST_BULK_MAX = 1500;   // 일괄 조정에서 한 번에 받는 최대 줄 수
 var REASON = '교복 미착용';   // 적발 사유는 이 한 가지로 통일
 var DEF_WARN = 10;            // 이 횟수부터 회부 경고를 띄운다
 var DEF_REFER = 15;           // 이 횟수에 도달하면 학생선도위원회 회부 대상
@@ -144,6 +145,7 @@ function api(p) {
       case 'ex_del':  return admin ? ok_(exemptDel_(String(p.id || ''))) : deny_();
       case 'th_set':  return admin ? ok_(saveThresholds_(p)) : deny_();
       case 'adjust':  return admin ? ok_(adjustCount_(p)) : deny_();
+      case 'adjust_bulk': return admin ? ok_(adjustBulk_(p)) : deny_();
       case 'reset':   return admin ? ok_(resetCounts_()) : deny_();
       case 'wipe':    return admin ? ok_(wipeRoster_()) : deny_();
       case 'backup':  return admin ? ok_({ id: 백업사본() }) : deny_();
@@ -454,6 +456,20 @@ function countRecords_(ss, no) {
   return n;
 }
 
+/** 기록 시트 전체를 한 번만 읽어 학번별 적발 건수를 센다 */
+function countRecordsAll_(ss) {
+  var ls = sheet_(ss, SH_L);
+  var last = ls.getLastRow();
+  var out = {};
+  if (last < 2) return out;
+  var vals = ls.getRange(2, 3, last - 1, 1).getValues();
+  for (var i = 0; i < vals.length; i++) {
+    var no = normNo_(vals[i][0]);
+    if (no) out[no] = (out[no] || 0) + 1;
+  }
+  return out;
+}
+
 /**
  * 누적 횟수를 원하는 숫자로 맞춘다.
  * 기록은 그대로 두고, 실제 건수와의 차이를 명단의 '조정' 칸에 남긴다.
@@ -486,6 +502,69 @@ function adjustCount_(p) {
       reason, String(p.by || '').slice(0, 40), memo]);
     bumpRev_();
     return { no: no, count: target, records: records, adjust: adjust, before: before };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 여러 학생의 누적 횟수를 한 번에 맞춘다. (종이 기록 이관용)
+ * 한 명씩 맞추는 adjustCount_ 와 규칙은 같고, 읽기·쓰기를 묶어서 처리한다.
+ *   p.list = [{no: '10312', count: 7}, …]
+ */
+function adjustBulk_(p) {
+  var list = p.list || [];
+  var reason = String(p.reason || '').trim().slice(0, 60);
+  var memo = String(p.memo || '').trim().slice(0, 200);
+  if (!list.length) throw new Error('반영할 내용이 없습니다.');
+  if (list.length > ADJUST_BULK_MAX) throw new Error('한 번에 ' + ADJUST_BULK_MAX + '줄까지만 반영할 수 있습니다. 나눠서 넣어주세요.');
+  if (!reason) throw new Error('조정 사유를 골라주세요.');
+  if (reason === '기타' && !memo) throw new Error('기타를 고르셨으면 메모를 입력해 주세요.');
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('다른 기록을 처리 중입니다. 잠시 후 다시 시도해 주세요.');
+  try {
+    var ss = ss_(), rs = sheet_(ss, SH_R), js = ensureAdjustSheet_(ss);
+    var last = rs.getLastRow();
+    if (last < 2) throw new Error('명단이 비어 있습니다. 먼저 학생 명단을 등록해 주세요.');
+    var rows = rs.getRange(2, 1, last - 1, 8).getValues();
+    var idx = {};
+    for (var i = 0; i < rows.length; i++) {
+      var rno = normNo_(rows[i][0]);
+      if (rno && idx[rno] == null) idx[rno] = i;
+    }
+    var recs = countRecordsAll_(ss);
+
+    var now = new Date(), by = String(p.by || '').slice(0, 40);
+    var adds = [], same = 0, bad = 0, missing = [], seen = {}, dup = 0;
+    for (var k = 0; k < list.length; k++) {
+      var no = normNo_(list[k] && list[k].no);
+      var target = parseInt(list[k] && list[k].count, 10);
+      if (!no || !(target >= 0) || target > 999) { bad++; continue; }
+      if (seen[no]) { dup++; continue; }
+      seen[no] = 1;
+      var at = idx[no];
+      if (at == null) { missing.push(no); continue; }
+      var before = num_(rows[at][5]) || 0;
+      if (before === target) { same++; continue; }
+      rows[at][5] = target;
+      rows[at][7] = target - (recs[no] || 0);
+      adds.push([Utilities.getUuid().replace(/-/g, '').slice(0, 10), now, no,
+        String(rows[at][1] || ''), before, target, reason, by, memo]);
+    }
+
+    if (adds.length) {
+      var col6 = [], col8 = [];
+      for (var r = 0; r < rows.length; r++) { col6.push([rows[r][5]]); col8.push([rows[r][7]]); }
+      rs.getRange(2, 6, rows.length, 1).setValues(col6);
+      rs.getRange(2, 8, rows.length, 1).setValues(col8);
+      js.getRange(js.getLastRow() + 1, 1, adds.length, HDR_J.length).setValues(adds);
+      bumpRev_();
+    }
+    return {
+      total: list.length, changed: adds.length, same: same, bad: bad, dup: dup,
+      missing: missing.length, missingNos: missing.slice(0, 30), rev: rev_()
+    };
   } finally {
     lock.releaseLock();
   }

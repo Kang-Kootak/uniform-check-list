@@ -523,6 +523,26 @@ a.btn{text-decoration:none}
         <button class="btn wide" id="adGo" type="button">횟수 맞추기</button>
       </div>
 
+      <div class="card pad" data-admin hidden style="display:flex;flex-direction:column;gap:10px">
+        <div class="sect-h" style="margin-bottom:2px"><h2>횟수 한꺼번에 맞추기</h2></div>
+        <p class="note">종이로 세어 둔 기록을 한 번에 옮겨올 때 씁니다. 한 줄에 학생 한 명, <b>학번,이름,횟수</b> 순서로 넣으세요. 이름은 없어도 되고, 엑셀·CSV에서 복사해 붙여넣으셔도 됩니다.</p>
+        <textarea class="inp" id="abText" spellcheck="false" placeholder="20602,권위원,14&#10;30203,김광규,14&#10;10308 김태현 11"></textarea>
+        <div>
+          <label class="fl">조정 사유 <span style="color:var(--crit)">필수</span></label>
+          <div class="chips" id="abReasons"></div>
+        </div>
+        <div id="abMemoWrap" hidden>
+          <label class="fl" for="abMemo">메모 <span style="color:var(--crit)">필수</span></label>
+          <input class="inp" id="abMemo" placeholder="어떤 사유인지 적어주세요" maxlength="200">
+        </div>
+        <div id="abPrev" class="note"></div>
+        <div class="btnrow">
+          <button class="btn primary" id="abGo" type="button" disabled>횟수 반영</button>
+          <button class="btn" id="abFileBtn" type="button">CSV 파일 열기</button>
+        </div>
+        <input type="file" id="abFileIn" accept=".csv,.txt,text/csv,text/plain" hidden>
+      </div>
+
       <div class="card" data-admin hidden>
         <div class="pad" style="padding-bottom:0">
           <div class="sect-h" style="margin-bottom:2px"><h2>조정 기록</h2><span class="sub" id="adSub"></span></div>
@@ -1382,6 +1402,83 @@ function resetAdForm(){
   renderAdReasons();
   showAdNow(); $("adHint").textContent = "";
 }
+/* ============ 횟수 한꺼번에 맞추기 (종이 기록 이관) ============ */
+var AB_MAX = 1500;                      // 한 번에 받는 최대 줄 수
+var abReasonSel = "종이 기록 이관";      // 가장 많이 쓰는 사유를 미리 골라 둔다
+function renderAbReasons(){
+  var box = $("abReasons"); if(!box) return;
+  box.innerHTML = ADJ_REASONS.map(function(r){
+    return '<button class="chip" type="button" data-act="abreason" data-v="'+esc(r)+'" aria-pressed="'+(abReasonSel===r)+'">'+esc(r)+'</button>';
+  }).join("");
+  var wrap = $("abMemoWrap");
+  if(wrap) wrap.hidden = (abReasonSel !== "기타");
+}
+function pickAbReason(r){
+  abReasonSel = r;
+  renderAbReasons();
+  if(r==="기타"){ var m=$("abMemo"); if(m){ m.focus(); } }
+  previewCounts();
+}
+/** "학번,이름,횟수" 줄을 읽는다. 이름은 없어도 되고 순서가 달라도 학번·숫자로 가려낸다 */
+function parseCounts(text){
+  var ok=[], bad=[], dup=0, seen={};
+  String(text).split(/\r?\n/).forEach(function(line,i){
+    var t=line.trim().replace(/^["']|["']$/g,"");
+    if(!t) return;
+    if(/학번|이름|횟수/.test(t) && !/\d{4}/.test(t)) return;       // 머리글 줄
+    var p=t.split(/[\t,;]+/).map(function(x){return x.trim().replace(/^["']|["']$/g,"");}).filter(Boolean);
+    if(p.length===1) p=t.split(/\s+/).filter(Boolean);
+    var no="", name="", cnt=null;
+    for(var k=0;k<p.length;k++){
+      var raw=p[k], d=raw.replace(/\D/g,"");
+      if(!no && d.length>=4 && /^\d{4,6}$/.test(d)){ no=d; continue; }
+      if(cnt===null && /^\d{1,3}$/.test(raw)){ cnt=parseInt(raw,10); continue; }
+      if(!name && !/^\d+$/.test(raw)) name=raw;
+    }
+    if(!no || cnt===null || cnt<0 || cnt>999){ bad.push({line:i+1}); return; }
+    if(seen[no]){ dup++; return; }
+    seen[no]=1; ok.push({no:no, name:name, count:cnt});
+  });
+  return {ok:ok, bad:bad, dup:dup};
+}
+/** 붙여넣은 내용을 지금 명단과 맞춰 본다 */
+function countsPlan(text){
+  var r=parseCounts(text), change=[], same=0, missing=[];
+  r.ok.forEach(function(x){
+    var s=students.get(x.no);
+    if(!s){ missing.push(x); return; }
+    if((s.count||0) === x.count){ same++; return; }
+    change.push({no:x.no, name:s.name, count:x.count, before:(s.count||0)});
+  });
+  return {rows:r.ok, bad:r.bad, dup:r.dup, change:change, same:same, missing:missing};
+}
+function previewCounts(){
+  var el=$("abPrev"), btn=$("abGo"); if(!el||!btn) return;
+  var raw=$("abText") ? $("abText").value : "";
+  if(!raw.trim()){ el.textContent=""; btn.disabled=true; return; }
+  var pl=countsPlan(raw);
+  var over = pl.rows.length > AB_MAX;
+  el.innerHTML = '읽은 줄 <b style="color:var(--ink)">'+pl.rows.length+'개</b> · 맞출 학생 <b style="color:var(--ink)">'+pl.change.length+'명</b>'+
+    (pl.same ? ' · 이미 같음 '+pl.same+'명' : "")+
+    (pl.missing.length ? ' · <span style="color:var(--crit)">명단에 없음 '+pl.missing.length+'명 ('+pl.missing.slice(0,3).map(function(x){return esc(x.no);}).join(", ")+(pl.missing.length>3?"…":"")+')</span>' : "")+
+    (pl.dup ? ' · 중복 학번 '+pl.dup+'줄' : "")+
+    (pl.bad.length ? ' · <span style="color:var(--crit)">인식 못한 줄 '+pl.bad.length+'개 ('+pl.bad.slice(0,2).map(function(b){return b.line+"행";}).join(", ")+'…)</span>' : "")+
+    (over ? '<br><span style="color:var(--crit)">한 번에 '+AB_MAX+'줄까지만 반영할 수 있습니다.</span>' : "");
+  btn.disabled = (pl.change.length===0) || over;
+}
+function readAbForm(){
+  if(!abReasonSel){ toast("조정 사유를 골라주세요."); return null; }
+  var memo = $("abMemo") ? $("abMemo").value.trim() : "";
+  if(abReasonSel==="기타" && !memo){ toast("기타를 고르셨으면 메모를 입력해 주세요."); $("abMemo").focus(); return null; }
+  return {reason:abReasonSel, memo:(abReasonSel==="기타"?memo:"")};
+}
+function abSummary(pl){
+  var few = pl.change.slice(0,3).map(function(c){ return esc(baseName(c.name))+" "+c.before+"→"+c.count+"회"; }).join(", ");
+  return "학생 <b>"+pl.change.length+"명</b>의 누적 횟수를 맞춥니다.<br><span style=\"opacity:.85\">"+few+(pl.change.length>3?" 외 "+(pl.change.length-3)+"명":"")+"</span>"+
+    (pl.missing.length ? '<br><span style="color:var(--crit)">명단에 없는 학번 '+pl.missing.length+'명은 건너뜁니다.</span>' : "")+
+    "<br>적발 이력은 지우지 않고 차이만 조정값으로 남습니다.";
+}
+
 var ADJ_NONE_NOTE = "횟수를 맞추면 학번·이름·날짜·사유가 여기와 스프레드시트에 함께 남습니다.";
 var ADJ_OLD_NOTE  = "지난 기록은 스프레드시트의 조정 시트에서 확인하세요.";
 var ADJ_MORE_NOTE = '최근 한 달 안의 5건까지만 보여드립니다. 나머지는 스프레드시트의 <b>조정</b> 시트에서 확인하세요.';
@@ -1576,6 +1673,7 @@ document.addEventListener("click", function(ev){
   }
   if(act==="theme"){ setTheme(t.getAttribute("data-v")); return; }
   if(act==="adreason"){ pickAdReason(t.getAttribute("data-v")); return; }
+  if(act==="abreason"){ pickAbReason(t.getAttribute("data-v")); return; }
   if(act==="adpick"){ pickAdjust(t.getAttribute("data-sid")); return; }
   if(act==="expick"){ pickExempt(t.getAttribute("data-sid")); return; }
   if(act==="exdel"){
@@ -1680,6 +1778,36 @@ $("adGo").addEventListener("click", function(){
     });
 });
 
+$("abText").addEventListener("input", previewCounts);
+$("abFileBtn").addEventListener("click", function(){ $("abFileIn").click(); });
+$("abFileIn").addEventListener("change", function(){
+  var f=this.files&&this.files[0]; if(!f) return;
+  var rd=new FileReader();
+  rd.onload=function(){ $("abText").value=String(rd.result||""); previewCounts(); toast("파일을 읽었습니다. 내용을 확인하고 반영하세요."); };
+  rd.onerror=function(){ toast("파일을 읽지 못했습니다."); };
+  rd.readAsText(f,"utf-8");
+  this.value="";
+});
+$("abGo").addEventListener("click", function(){
+  var v=readAbForm(); if(!v) return;
+  var pl=countsPlan($("abText").value);
+  if(!pl.change.length){ toast("맞출 학생이 없습니다."); return; }
+  if(pl.rows.length > AB_MAX){ toast("한 번에 "+AB_MAX+"줄까지만 반영할 수 있습니다."); return; }
+  askConfirm("횟수 한꺼번에 맞추기", abSummary(pl), "맞추기").then(function(yes){
+    if(!yes) return;
+    $("abGo").disabled=true;
+    toast("반영하는 중입니다… 학생이 많으면 조금 걸립니다.");
+    call("adjust_bulk", {
+      list: pl.change.map(function(c){ return {no:c.no, count:c.count}; }),
+      reason: v.reason, memo: v.memo, by: me()||"미기재"
+    }).then(function(d){
+      $("abText").value=""; previewCounts();
+      toast("학생 "+d.changed+"명의 누적 횟수를 맞췄습니다."+(d.missing?" (명단에 없는 "+d.missing+"명은 건너뜀)":""));
+      return refresh(true);
+    }, function(e){ toast(errMsg(e)); }).then(function(){ $("abGo").disabled=false; });
+  });
+});
+
 $("thWarn").addEventListener("input", thHint);
 $("thRefer").addEventListener("input", thHint);
 $("thGo").addEventListener("click", function(){
@@ -1739,6 +1867,7 @@ applyTheme();
 loadCache();
 resetExForm();
 resetAdForm();
+renderAbReasons();
 render();
 renderNow();
 setInterval(renderNow, 1000);
