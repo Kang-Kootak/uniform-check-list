@@ -11,7 +11,7 @@ var HDR_R = ['학번', '이름', '학년', '반', '번호', '누적횟수', '최
 var HDR_L = ['기록ID', '일시', '학번', '이름', '학년', '반', '사유', '메모', '기록자'];
 var HDR_E = ['면제ID', '학번', '이름', '사유', '시작일', '종료일', '등록자', '등록일시'];
 var EXEMPT_LIMIT = 500;
-var HDR_J = ['조정ID', '일시', '학번', '이름', '이전횟수', '조정후횟수', '사유', '처리자'];
+var HDR_J = ['조정ID', '일시', '학번', '이름', '이전횟수', '조정후횟수', '사유', '처리자', '메모'];
 var ADJUST_LIMIT = 300;
 var REASON = '교복 미착용';   // 적발 사유는 이 한 가지로 통일
 var DEF_WARN = 10;            // 이 횟수부터 회부 경고를 띄운다
@@ -417,10 +417,8 @@ function undoRecord_(p) {
 function ensureAdjustSheet_(ss) {
   var sh = ss.getSheetByName(SH_J);
   if (!sh) sh = ss.insertSheet(SH_J);
-  if (sh.getLastRow() === 0 || String(sh.getRange(1, 1).getValue()).trim() !== HDR_J[0]) {
-    sh.getRange(1, 1, 1, HDR_J.length).setValues([HDR_J]);
-    sh.setFrozenRows(1);
-  }
+  sh.getRange(1, 1, 1, HDR_J.length).setValues([HDR_J]);
+  sh.setFrozenRows(1);
   return sh;
 }
 
@@ -438,7 +436,8 @@ function readAdjusts_() {
     out.push({
       id: String(vals[i][0]), at: iso_(vals[i][1]), no: no, name: String(vals[i][3] || ''),
       before: num_(vals[i][4]) || 0, after: num_(vals[i][5]) || 0,
-      reason: String(vals[i][6] || ''), by: String(vals[i][7] || '')
+      reason: String(vals[i][6] || ''), by: String(vals[i][7] || ''),
+      memo: String(vals[i][8] || '')
     });
   }
   return out;   // 최신순
@@ -463,11 +462,13 @@ function countRecords_(ss, no) {
 function adjustCount_(p) {
   var no = normNo_(p.no);
   var target = parseInt(p.count, 10);
-  var reason = String(p.reason || '').trim().slice(0, 200);
+  var reason = String(p.reason || '').trim().slice(0, 60);
+  var memo = String(p.memo || '').trim().slice(0, 200);
   if (!no) throw new Error('학생을 선택해 주세요.');
   if (!(target >= 0)) throw new Error('0 이상의 숫자를 입력해 주세요.');
   if (target > 999) throw new Error('999 이하로 입력해 주세요.');
-  if (!reason) throw new Error('조정 사유를 입력해 주세요.');
+  if (!reason) throw new Error('조정 사유를 골라주세요.');
+  if (reason === '기타' && !memo) throw new Error('기타를 고르셨으면 메모를 입력해 주세요.');
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(25000)) throw new Error('잠시 후 다시 시도해 주세요.');
   try {
@@ -482,7 +483,7 @@ function adjustCount_(p) {
     rs.getRange(row, 8).setValue(adjust);
     var id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
     js.appendRow([id, new Date(), no, String(info[1] || ''), before, target,
-      reason, String(p.by || '').slice(0, 40)]);
+      reason, String(p.by || '').slice(0, 40), memo]);
     bumpRev_();
     return { no: no, count: target, records: records, adjust: adjust, before: before };
   } finally {

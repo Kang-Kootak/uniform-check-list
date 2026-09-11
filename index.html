@@ -484,8 +484,12 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
           <input class="inp" id="adCount" type="number" inputmode="numeric" min="0" max="999" placeholder="예: 10">
         </div>
         <div>
-          <label class="fl" for="adReason">조정 사유 <span style="color:var(--crit)">필수</span></label>
-          <input class="inp" id="adReason" placeholder="예: 종이 기록 이관, 선도위원회 결과 반영" maxlength="200">
+          <label class="fl">조정 사유 <span style="color:var(--crit)">필수</span></label>
+          <div class="chips" id="adReasons"></div>
+        </div>
+        <div id="adMemoWrap" hidden>
+          <label class="fl" for="adMemo">메모 <span style="color:var(--crit)">필수</span></label>
+          <input class="inp" id="adMemo" placeholder="어떤 사유인지 적어주세요" maxlength="200">
         </div>
         <div id="adHint" class="note"></div>
         <button class="btn wide" id="adGo" type="button">횟수 맞추기</button>
@@ -887,11 +891,11 @@ function removeRecord(sid, entryId){
     s.history=h; s.count=totalOf(h.length, s.adjust); s.lastAt = h.length? h[h.length-1].at : null; return s;
   });
 }
-function adjustCount(sid, target, reason){
+function adjustCount(sid, target, reason, memo){
   var s0 = students.get(sid);
   var rec0 = {id:rid(), at:new Date().toISOString(), no:sid,
     name:(s0?s0.name:""), before:(s0?(s0.count||0):0), after:target,
-    reason:reason||"", by:me()||"미기재"};
+    reason:reason||"", memo:memo||"", by:me()||"미기재"};
   return mutateStudent(sid, function(s){
     var rec = (s.history||[]).length;
     s.adjust = target - rec;
@@ -1402,19 +1406,38 @@ function adHint(){
     (left===0 ? ' · <span style="color:var(--crit)">선도위원회 회부 대상</span>'
       : (left>0 ? ' · <span style="color:var(--warn)">회부까지 '+left+'회</span>' : ''));
 }
+var ADJ_REASONS = ["종이 기록 이관","선도위원회 회부 반영","오기입 정정","기타"];
+var adReasonSel = "";
+function renderAdReasons(){
+  var box = $("adReasons"); if(!box) return;
+  box.innerHTML = ADJ_REASONS.map(function(r){
+    return '<button class="chip" type="button" data-act="adreason" data-v="'+esc(r)+'" aria-pressed="'+(adReasonSel===r)+'">'+esc(r)+'</button>';
+  }).join("");
+  var wrap = $("adMemoWrap");
+  if(wrap) wrap.hidden = (adReasonSel !== "기타");
+}
+function pickAdReason(r){
+  adReasonSel = r;
+  renderAdReasons();
+  if(r==="기타"){ var m=$("adMemo"); if(m){ m.focus(); } }
+  adHint();
+}
 function readAdForm(){
   if(!adSel){ toast("학생을 먼저 선택해 주세요."); $("adQ").focus(); return null; }
   var v = parseInt($("adCount").value, 10);
   if(!(v>=0)){ toast("0 이상의 숫자를 입력해 주세요."); $("adCount").focus(); return null; }
   if(v>999){ toast("999 이하로 입력해 주세요."); $("adCount").focus(); return null; }
-  var reason = $("adReason").value.trim();
-  if(!reason){ toast("조정 사유를 입력해 주세요."); $("adReason").focus(); return null; }
-  return {no:adSel.no, name:adSel.name, count:v, reason:reason};
+  if(!adReasonSel){ toast("조정 사유를 골라주세요."); return null; }
+  var memo = $("adMemo") ? $("adMemo").value.trim() : "";
+  if(adReasonSel==="기타" && !memo){ toast("기타를 고르셨으면 메모를 입력해 주세요."); $("adMemo").focus(); return null; }
+  return {no:adSel.no, name:adSel.name, count:v, reason:adReasonSel, memo:(adReasonSel==="기타"?memo:"")};
 }
 function resetAdForm(){
-  adSel = null;
-  $("adQ").value = ""; $("adCount").value = ""; $("adReason").value = "";
+  adSel = null; adReasonSel = "";
+  $("adQ").value = ""; $("adCount").value = "";
+  if($("adMemo")) $("adMemo").value = "";
   $("adPick").innerHTML = "";
+  renderAdReasons();
   showAdNow(); $("adHint").textContent = "";
 }
 function renderAdjusts(){
@@ -1426,6 +1449,7 @@ function renderAdjusts(){
       '<span class="when">'+fmtWhen(a.at)+'</span>'+
       '<div class="body"><b>'+esc(baseName(a.name))+'</b><span class="sid">'+esc(a.no)+'</span>'+
         '<div class="rsn">'+a.before+'회 → <b>'+a.after+'회</b> · '+esc(a.reason)+
+          (a.memo ? ' · '+esc(a.memo) : "")+
           (a.by ? ' <span class="who2">— '+esc(a.by)+'</span>' : "")+'</div>'+
       '</div>'+
     '</li>';
@@ -1592,6 +1616,7 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="theme"){ setTheme(t.getAttribute("data-v")); return; }
+  if(act==="adreason"){ pickAdReason(t.getAttribute("data-v")); return; }
   if(act==="adpick"){ pickAdjust(t.getAttribute("data-sid")); return; }
   if(act==="expick"){ pickExempt(t.getAttribute("data-sid")); return; }
   if(act==="exdel"){
@@ -1689,7 +1714,7 @@ $("adGo").addEventListener("click", function(){
     "<b>"+esc(baseName(v.name))+"</b> 학생의 누적 횟수를 <b>"+cur+"회 → "+v.count+"회</b> 로 맞춥니다.<br>적발 이력은 지우지 않고 차이만 조정값으로 남습니다.",
     "맞추기").then(function(yes){
       if(!yes) return;
-      adjustCount(v.no, v.count, v.reason).then(function(){
+      adjustCount(v.no, v.count, v.reason, v.memo).then(function(){
         toast(baseName(v.name)+" 누적 "+v.count+"회로 맞췄습니다.");
         resetAdForm(); render();
       }, function(e){ toast(dbErr(e)); });
