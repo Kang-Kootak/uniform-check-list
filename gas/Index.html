@@ -99,6 +99,7 @@ ul{margin:0;padding:0;list-style:none}
   padding:6px 12px;font-size:12.5px;font-weight:500;cursor:pointer;box-shadow:var(--shadow-sm)}
 .who b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .who:active{transform:translateY(1px)}
+.who.need{border-color:var(--crit);color:var(--crit)}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
 .dot.live{background:var(--ok)}
 .dot.local{background:var(--warn)}
@@ -863,6 +864,7 @@ function applyBoot(d){
   lsSet(LS_CACHE, {students:d.students||[], logs:logs.slice(0,200), exempts:exempts, adjusts:adjusts.slice(0,50), th:TH, role:role, at:syncedAt});
   applyRole();
   render();
+  if(!me()) askName();
 }
 function loadCache(){
   var c=lsGet(LS_CACHE,null);
@@ -909,7 +911,11 @@ function renderNow(){
     (d.getMonth()+1)+"월 "+d.getDate()+"일 ("+WD[d.getDay()]+")";
   $("nowTime").textContent=ts;
 }
-function renderWho(){ $("whoName").textContent = me() || "기록자 설정"; }
+function renderWho(){
+  var n = me();
+  $("whoName").textContent = n || "이름 입력 필요";
+  $("whoBtn").classList.toggle("need", !n);
+}
 
 function renderBanner(){
   var parts=[];
@@ -920,7 +926,7 @@ function renderBanner(){
       ? '아래 <b>명단</b> 탭에서 학번과 이름을 붙여넣으면 바로 검색할 수 있습니다.'
       : '학생부 선생님께 명단 등록을 요청해 주세요.'));
   } else if(booted && !me()){
-    parts.push(bn("info","기록자 이름을 정해주세요","오른쪽 위 버튼을 눌러 이름을 입력하면 누가 지도했는지 함께 남습니다."));
+    parts.push(bn("warn","기록자 이름을 먼저 입력해 주세요","이름을 넣어야 적발을 기록할 수 있습니다. 오른쪽 위 <b>이름 입력 필요</b> 를 누르세요."));
   }
   if(booted && role==="admin" && !pinSet){
     parts.push(bn("warn","PIN이 설정되지 않았습니다","스프레드시트 <b>설정</b> 시트에서 기록PIN·관리PIN을 정해주세요. 지금은 주소를 아는 누구나 명단을 볼 수 있습니다."));
@@ -1181,12 +1187,43 @@ function askConfirm(title, body, okLabel, danger){
     $("cYes").onclick=function(){ closeModal(); resolve(true); };
   });
 }
+/* ============ 기록자 이름 (필수) ============ */
+var nameLock = false;
+/** 이름이 없으면 기록을 시작할 수 없다 */
+function requireName(){
+  if(me()) return true;
+  askName();
+  return false;
+}
+/** 닫을 수 없는 이름 입력 화면 */
+function askName(){
+  if(nameLock && $("modal").open){ var el=$("nameIn"); if(el) el.focus(); return; }   // 이미 열려 있으면 입력하던 것을 지우지 않는다
+  nameLock = true;
+  modal('<div class="sheet-h"><div><h3>기록자 이름</h3><div class="sm" style="font-family:var(--font-ui)">이 휴대폰에만 저장됩니다</div></div></div>'+
+    '<div class="sheet-b">'+
+    '<p class="note">누가 지도했는지 기록에 함께 남기기 때문에 <b>이름을 넣어야 적발을 기록할 수 있습니다.</b> 나중에 오른쪽 위에서 바꾸실 수 있습니다.</p>'+
+    '<div><label class="fl" for="nameIn">이름</label>'+
+      '<input class="inp" id="nameIn" placeholder="예: 김선생 / 2학년 선도부 이도현" maxlength="40" autocomplete="off"></div>'+
+    '<button class="btn primary wide" type="button" id="nameGo">저장하고 시작하기</button></div>');
+  var i=$("nameIn"); setTimeout(function(){ i.focus(); },80);
+  function go(){
+    var v=i.value.trim();
+    if(!v){ toast("기록자 이름을 입력해 주세요."); i.focus(); return; }
+    lsSet(LS_ME, v); nameLock=false; closeModal(); render();
+    toast(v+" 님으로 기록합니다.");
+  }
+  $("nameGo").onclick=go;
+  i.addEventListener("keydown", function(e){ if(e.key==="Enter") go(); });
+}
+/* 이름을 넣기 전에는 Esc·바깥 누르기로 닫히지 않게 */
+$("modal").addEventListener("cancel", function(e){ if(nameLock && !me()) e.preventDefault(); });
+
 function askWho(){
   modal('<div class="sheet-h"><div><h3>내 설정</h3><div class="sm" style="font-family:var(--font-ui)">이 휴대폰에만 저장됩니다</div></div>'+
       '<button class="close" type="button" id="wClose" aria-label="닫기">✕</button></div>'+
     '<div class="sheet-b">'+
     '<div class="block"><h4>기록자 이름</h4>'+
-      '<input class="inp" id="whoIn" placeholder="예: 김선생 / 2학년 선도부 이도현" value="'+esc(me())+'">'+
+      '<input class="inp" id="whoIn" maxlength="40" placeholder="예: 김선생 / 2학년 선도부 이도현" value="'+esc(me())+'">'+
       '<p class="note">적발 기록에 누가 지도했는지 함께 남습니다.</p>'+
       '<button class="btn primary wide" type="button" id="wYes">이름 저장</button>'+
     '</div>'+
@@ -1200,9 +1237,20 @@ function askWho(){
       '<p class="note">명단을 등록·수정하시려면 관리 PIN으로 다시 들어오세요.</p>'+
     '</div></div>');
   var i=$("whoIn"); setTimeout(function(){ i.focus(); },60);
-  $("wClose").onclick=closeModal;
-  $("wYes").onclick=function(){ lsSet(LS_ME, i.value.trim()); closeModal(); render(); toast("이름을 저장했습니다."); };
-  $("wPin").onclick=function(){ closeModal(); askPin(false); };
+  nameLock = !me();
+  $("wClose").onclick=function(){
+    if(!me()){ toast("기록자 이름을 먼저 입력해 주세요."); i.focus(); return; }
+    nameLock=false; closeModal();
+  };
+  $("wYes").onclick=function(){
+    var v=i.value.trim();
+    if(!v){ toast("기록자 이름을 입력해 주세요."); i.focus(); return; }
+    lsSet(LS_ME, v); nameLock=false; closeModal(); render(); toast("이름을 저장했습니다.");
+  };
+  $("wPin").onclick=function(){
+    if(!me()){ toast("기록자 이름을 먼저 입력해 주세요."); i.focus(); return; }
+    nameLock=false; closeModal(); askPin(false);
+  };
   i.addEventListener("keydown", function(e){ if(e.key==="Enter") $("wYes").click(); });
 }
 function askPin(wrong){
@@ -1301,6 +1349,7 @@ function renderExempts(){
       ? '<li><div class="note" style="padding:10px 14px">'+EX_MORE_NOTE+'</div></li>' : "");
 }
 function readExForm(){
+  if(!requireName()) return null;
   if(!exSel){ toast("학생을 먼저 선택해 주세요."); $("exQ").focus(); return null; }
   var reason = $("exReason").value.trim();
   if(!reason){ toast("면제 사유를 입력해 주세요."); $("exReason").focus(); return null; }
@@ -1385,6 +1434,7 @@ function pickAdReason(r){
   adHint();
 }
 function readAdForm(){
+  if(!requireName()) return null;
   if(!adSel){ toast("학생을 먼저 선택해 주세요."); $("adQ").focus(); return null; }
   var v = parseInt($("adCount").value, 10);
   if(!(v>=0)){ toast("0 이상의 숫자를 입력해 주세요."); $("adCount").focus(); return null; }
@@ -1467,6 +1517,7 @@ function previewCounts(){
   btn.disabled = (pl.change.length===0) || over;
 }
 function readAbForm(){
+  if(!requireName()) return null;
   if(!abReasonSel){ toast("조정 사유를 골라주세요."); return null; }
   var memo = $("abMemo") ? $("abMemo").value.trim() : "";
   if(abReasonSel==="기타" && !memo){ toast("기타를 고르셨으면 메모를 입력해 주세요."); $("abMemo").focus(); return null; }
@@ -1582,13 +1633,14 @@ function toast(msg, actionLabel, action){
 function doPlus(no, btn){
   var s=students.get(no);
   if(!s || busy.has(no)) return;
+  if(!requireName()) return;
   var st0=statusOf(s);
   if(st0){ toast(st0.toast(baseName(s.name))); return; }
   busy.add(no); if(btn) btn.disabled=true;
 
   var prevCount=s.count||0, prevLast=s.lastAt||null;
   var tmp={id:"tmp_"+rid(), at:new Date().toISOString(), no:no, name:s.name, grade:s.grade, klass:s.klass,
-           reason:REASON, memo:"", by:me()||"미기재", pending:true};
+           reason:REASON, memo:"", by:me(), pending:true};
   s.count=(s.count||0)+1; s.lastAt=tmp.at;
   logs.unshift(tmp);
   render();
@@ -1658,9 +1710,9 @@ document.addEventListener("click", function(ev){
     var no=sheetNo, s=students.get(no);
     if(!s || statusOf(s)) return;
     t.disabled=true;
-    call("add",{no:no, by:me()||"미기재"}).then(function(d){
+    call("add",{no:no, by:me()}).then(function(d){
       s.count=d.count; s.lastAt=d.at; rev=d.rev;
-      var e={id:d.id, at:d.at, reason:REASON, memo:"", by:me()||"미기재"};
+      var e={id:d.id, at:d.at, reason:REASON, memo:"", by:me()};
       if(histCache[no]) histCache[no].unshift(e);
       logs.unshift({id:d.id, at:d.at, no:no, name:s.name, grade:s.grade, klass:s.klass, reason:REASON, memo:e.memo, by:e.by});
       render(); drawSheet();
@@ -1770,7 +1822,7 @@ $("adGo").addEventListener("click", function(){
     "맞추기").then(function(yes){
       if(!yes) return;
       $("adGo").disabled=true;
-      call("adjust", {no:v.no, count:v.count, reason:v.reason, memo:v.memo, by:me()||"미기재"}).then(function(d){
+      call("adjust", {no:v.no, count:v.count, reason:v.reason, memo:v.memo, by:me()}).then(function(d){
         toast(baseName(v.name)+" 누적 "+d.count+"회로 맞췄습니다.");
         resetAdForm();
         return refresh(true);
@@ -1799,7 +1851,7 @@ $("abGo").addEventListener("click", function(){
     toast("반영하는 중입니다… 학생이 많으면 조금 걸립니다.");
     call("adjust_bulk", {
       list: pl.change.map(function(c){ return {no:c.no, count:c.count}; }),
-      reason: v.reason, memo: v.memo, by: me()||"미기재"
+      reason: v.reason, memo: v.memo, by: me()
     }).then(function(d){
       $("abText").value=""; previewCounts();
       toast("학생 "+d.changed+"명의 누적 횟수를 맞췄습니다."+(d.missing?" (명단에 없는 "+d.missing+"명은 건너뜀)":""));
@@ -1824,7 +1876,7 @@ $("exQ").addEventListener("input", renderExPick);
 $("exGo").addEventListener("click", function(){
   var v = readExForm(); if(!v) return;
   $("exGo").disabled = true;
-  call("ex_add", {no:v.no, reason:v.reason, from:v.from, to:v.to, by:me()||"미기재"}).then(function(){
+  call("ex_add", {no:v.no, reason:v.reason, from:v.from, to:v.to, by:me()}).then(function(){
     toast(baseName(v.name)+" 학생을 "+fmtDay(v.from)+"~"+fmtDay(v.to)+" 면제로 등록했습니다.");
     resetExForm();
     return refresh(true);
@@ -1848,7 +1900,7 @@ $("wipeAll").addEventListener("click", function(){
 
 $("sheet").addEventListener("close", function(){ sheetNo=null; });
 $("sheet").addEventListener("click", function(e){ if(e.target===this) this.close(); });
-$("modal").addEventListener("click", function(e){ if(e.target===this) this.close(); });
+$("modal").addEventListener("click", function(e){ if(e.target===this && !(nameLock && !me())) this.close(); });
 window.addEventListener("scroll", function(){ $("topbar").classList.toggle("stuck", window.scrollY>4); }, {passive:true});
 document.addEventListener("keydown", function(){ lastAct=Date.now(); });
 

@@ -326,6 +326,7 @@ function readExempts_() {
 
 function exemptAdd_(p) {
   var no = normNo_(p.no);
+  var by = by_(p.by);
   var reason = String(p.reason || '').trim().slice(0, 100);
   var from = dstr_(p.from), to = dstr_(p.to);
   if (!no) throw new Error('학생을 선택해 주세요.');
@@ -340,7 +341,7 @@ function exemptAdd_(p) {
     if (!row) throw new Error('명단에 없는 학번입니다.');
     var name = String(rs.getRange(row, 2).getValue() || '');
     var id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
-    es.appendRow([id, no, name, reason, from, to, String(p.by || '').slice(0, 40), new Date()]);
+    es.appendRow([id, no, name, reason, from, to, by, new Date()]);
     bumpRev_();
     return { id: id, no: no, name: name, reason: reason, from: from, to: to };
   } finally {
@@ -370,8 +371,16 @@ function exemptDel_(id) {
 
 /* ─────────────────────────── 쓰기 ─────────────────────────── */
 
+/** 기록자 이름은 필수 — 누가 지도했는지 남지 않는 기록은 받지 않는다 */
+function by_(v) {
+  var by = String(v == null ? '' : v).trim().slice(0, 40);
+  if (!by) throw new Error('기록자 이름을 먼저 입력해 주세요. (오른쪽 위 기록자 설정)');
+  return by;
+}
+
 function addRecord_(p) {
   var no = normNo_(p.no);
+  var by = by_(p.by);
   if (!no) throw new Error('학번이 올바르지 않습니다.');
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(25000)) throw new Error('다른 기록을 처리 중입니다. 잠시 후 다시 눌러주세요.');
@@ -387,8 +396,7 @@ function addRecord_(p) {
               message: '오늘 이미 체크된 학생입니다.' };
     }
     var id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
-    ls.appendRow([id, now, no, info[1], info[2], info[3],
-      REASON, '', String(p.by || '').slice(0, 40)]);
+    ls.appendRow([id, now, no, info[1], info[2], info[3], REASON, '', by]);
     var count = (num_(info[5]) || 0) + 1;
     rs.getRange(row, 6, 1, 2).setValues([[count, now]]);
     bumpRev_();
@@ -477,6 +485,7 @@ function countRecordsAll_(ss) {
  */
 function adjustCount_(p) {
   var no = normNo_(p.no);
+  var by = by_(p.by);
   var target = parseInt(p.count, 10);
   var reason = String(p.reason || '').trim().slice(0, 60);
   var memo = String(p.memo || '').trim().slice(0, 200);
@@ -498,8 +507,7 @@ function adjustCount_(p) {
     rs.getRange(row, 6).setValue(target);
     rs.getRange(row, 8).setValue(adjust);
     var id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
-    js.appendRow([id, new Date(), no, String(info[1] || ''), before, target,
-      reason, String(p.by || '').slice(0, 40), memo]);
+    js.appendRow([id, new Date(), no, String(info[1] || ''), before, target, reason, by, memo]);
     bumpRev_();
     return { no: no, count: target, records: records, adjust: adjust, before: before };
   } finally {
@@ -513,6 +521,7 @@ function adjustCount_(p) {
  *   p.list = [{no: '10312', count: 7}, …]
  */
 function adjustBulk_(p) {
+  var by = by_(p.by);
   var list = p.list || [];
   var reason = String(p.reason || '').trim().slice(0, 60);
   var memo = String(p.memo || '').trim().slice(0, 200);
@@ -535,7 +544,7 @@ function adjustBulk_(p) {
     }
     var recs = countRecordsAll_(ss);
 
-    var now = new Date(), by = String(p.by || '').slice(0, 40);
+    var now = new Date();
     var adds = [], same = 0, bad = 0, missing = [], seen = {}, dup = 0;
     for (var k = 0; k < list.length; k++) {
       var no = normNo_(list[k] && list[k].no);
