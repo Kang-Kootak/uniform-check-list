@@ -6,11 +6,13 @@
  * 자세한 순서는 저장소의 gas/설치_방법.md 참고.
  */
 
-var SH_R = '명단', SH_L = '기록', SH_C = '설정', SH_E = '면제';
+var SH_R = '명단', SH_L = '기록', SH_C = '설정', SH_E = '면제', SH_J = '조정';
 var HDR_R = ['학번', '이름', '학년', '반', '번호', '누적횟수', '최근적발', '조정'];
 var HDR_L = ['기록ID', '일시', '학번', '이름', '학년', '반', '사유', '메모', '기록자'];
 var HDR_E = ['면제ID', '학번', '이름', '사유', '시작일', '종료일', '등록자', '등록일시'];
 var EXEMPT_LIMIT = 500;
+var HDR_J = ['조정ID', '일시', '학번', '이름', '이전횟수', '조정후횟수', '사유', '처리자'];
+var ADJUST_LIMIT = 300;
 var REASON = '교복 미착용';   // 적발 사유는 이 한 가지로 통일
 var DEF_WARN = 10;            // 이 횟수부터 회부 경고를 띄운다
 var DEF_REFER = 15;           // 이 횟수에 도달하면 학생선도위원회 회부 대상
@@ -50,6 +52,10 @@ function 초기설정() {
   var es = ensureExemptSheet_(ss);
   es.getRange(1, 1, 1, HDR_E.length).setFontWeight('bold').setBackground('#e2ecf6');
   es.setColumnWidth(1, 90); es.setColumnWidth(4, 220); es.setColumnWidth(8, 150);
+
+  var js = ensureAdjustSheet_(ss);
+  js.getRange(1, 1, 1, HDR_J.length).setFontWeight('bold').setBackground('#e2ecf6');
+  js.setColumnWidth(1, 90); js.setColumnWidth(2, 150); js.setColumnWidth(7, 240);
 
   var cs = ss.getSheetByName(SH_C) || ss.insertSheet(SH_C);
   if (cs.getLastRow() === 0) {
@@ -200,6 +206,7 @@ function boot_(role) {
     students: students,
     logs: recentLogs_(LOG_LIMIT),
     exempts: readExempts_(),
+    adjusts: role === 'admin' ? readAdjusts_() : [],
     thresholds: thresholds_(cfg),
     school: String(cfg['학교명'] || '').trim(),
     pinSet: !!(String(cfg['기록PIN'] || '').trim() || String(cfg['관리PIN'] || '').trim()),
@@ -406,6 +413,37 @@ function undoRecord_(p) {
   }
 }
 
+/** 조정 시트도 나중에 생긴 기능이라, 없으면 그때 만든다 */
+function ensureAdjustSheet_(ss) {
+  var sh = ss.getSheetByName(SH_J);
+  if (!sh) sh = ss.insertSheet(SH_J);
+  if (sh.getLastRow() === 0 || String(sh.getRange(1, 1).getValue()).trim() !== HDR_J[0]) {
+    sh.getRange(1, 1, 1, HDR_J.length).setValues([HDR_J]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function readAdjusts_() {
+  var js;
+  try { js = ensureAdjustSheet_(ss_()); } catch (e) { return []; }
+  var last = js.getLastRow();
+  if (last < 2) return [];
+  var from = Math.max(2, last - ADJUST_LIMIT + 1);
+  var vals = js.getRange(from, 1, last - from + 1, HDR_J.length).getValues();
+  var out = [];
+  for (var i = vals.length - 1; i >= 0; i--) {
+    var no = normNo_(vals[i][2]);
+    if (!no) continue;
+    out.push({
+      id: String(vals[i][0]), at: iso_(vals[i][1]), no: no, name: String(vals[i][3] || ''),
+      before: num_(vals[i][4]) || 0, after: num_(vals[i][5]) || 0,
+      reason: String(vals[i][6] || ''), by: String(vals[i][7] || '')
+    });
+  }
+  return out;   // 최신순
+}
+
 /** 기록 시트에 남은 실제 적발 건수 */
 function countRecords_(ss, no) {
   var ls = sheet_(ss, SH_L);
@@ -425,21 +463,28 @@ function countRecords_(ss, no) {
 function adjustCount_(p) {
   var no = normNo_(p.no);
   var target = parseInt(p.count, 10);
+  var reason = String(p.reason || '').trim().slice(0, 200);
   if (!no) throw new Error('학생을 선택해 주세요.');
   if (!(target >= 0)) throw new Error('0 이상의 숫자를 입력해 주세요.');
   if (target > 999) throw new Error('999 이하로 입력해 주세요.');
+  if (!reason) throw new Error('조정 사유를 입력해 주세요.');
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(25000)) throw new Error('잠시 후 다시 시도해 주세요.');
   try {
-    var ss = ss_(), rs = sheet_(ss, SH_R);
+    var ss = ss_(), rs = sheet_(ss, SH_R), js = ensureAdjustSheet_(ss);
     var row = rosterIndex_(rs)[no];
     if (!row) throw new Error('명단에 없는 학번입니다.');
+    var info = rs.getRange(row, 1, 1, 8).getValues()[0];
+    var before = num_(info[5]) || 0;
     var records = countRecords_(ss, no);
     var adjust = target - records;
     rs.getRange(row, 6).setValue(target);
     rs.getRange(row, 8).setValue(adjust);
+    var id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+    js.appendRow([id, new Date(), no, String(info[1] || ''), before, target,
+      reason, String(p.by || '').slice(0, 40)]);
     bumpRev_();
-    return { no: no, count: target, records: records, adjust: adjust };
+    return { no: no, count: target, records: records, adjust: adjust, before: before };
   } finally {
     lock.releaseLock();
   }
@@ -543,6 +588,8 @@ function resetCounts_() {
   if (!lock.tryLock(60000)) throw new Error('잠시 후 다시 시도해 주세요.');
   try {
     var ss = ss_(), rs = sheet_(ss, SH_R), ls = sheet_(ss, SH_L);
+    var js = ensureAdjustSheet_(ss);
+    if (js.getLastRow() >= 2) js.getRange(2, 1, js.getLastRow() - 1, HDR_J.length).clearContent();
     var lastL = ls.getLastRow();
     if (lastL >= 2) ls.getRange(2, 1, lastL - 1, HDR_L.length).clearContent();
     var lastR = rs.getLastRow();
@@ -565,6 +612,8 @@ function wipeRoster_() {
     var ss = ss_(), rs = sheet_(ss, SH_R), ls = sheet_(ss, SH_L);
     if (rs.getLastRow() >= 2) rs.getRange(2, 1, rs.getLastRow() - 1, HDR_R.length).clearContent();
     if (ls.getLastRow() >= 2) ls.getRange(2, 1, ls.getLastRow() - 1, HDR_L.length).clearContent();
+    var js = ensureAdjustSheet_(ss);
+    if (js.getLastRow() >= 2) js.getRange(2, 1, js.getLastRow() - 1, HDR_J.length).clearContent();
     bumpRev_();
     return {};
   } finally {

@@ -511,8 +511,19 @@ a.btn{text-decoration:none}
           <label class="fl" for="adCount">조정 후 누적 횟수</label>
           <input class="inp" id="adCount" type="number" inputmode="numeric" min="0" max="999" placeholder="예: 10">
         </div>
+        <div>
+          <label class="fl" for="adReason">조정 사유 <span style="color:var(--crit)">필수</span></label>
+          <input class="inp" id="adReason" placeholder="예: 종이 기록 이관, 선도위원회 결과 반영" maxlength="200">
+        </div>
         <div id="adHint" class="note"></div>
         <button class="btn wide" id="adGo" type="button">횟수 맞추기</button>
+      </div>
+
+      <div class="card" data-admin hidden>
+        <div class="pad" style="padding-bottom:0">
+          <div class="sect-h" style="margin-bottom:2px"><h2>조정 기록</h2><span class="sub" id="adSub"></span></div>
+        </div>
+        <ul class="log" id="adList"></ul>
       </div>
 
       <div class="card pad" data-admin hidden style="display:flex;flex-direction:column;gap:10px">
@@ -570,7 +581,7 @@ var POLL_MS=20000, IDLE_MS=15*60*1000;
 
 /* ============ 상태 ============ */
 var REASON="교복 미착용";   // 적발 사유는 이 한 가지로 통일
-var students=new Map(), logs=[], exempts=[], histCache={};
+var students=new Map(), logs=[], exempts=[], adjusts=[], histCache={};
 var role=null, pinSet=true, sheetUrl="", logLimit=1000, rev=0;
 var tab="check", period="all", klassFilter="all", shown=40;
 var busy=new Set(), inflight=0, lastAct=Date.now(), syncedAt=null, booted=false;
@@ -819,12 +830,13 @@ function applyBoot(d){
   (d.students||[]).forEach(function(s){ students.set(s.no, s); });
   logs=d.logs||[];
   exempts=d.exempts||[];
+  adjusts=d.adjusts||[];
   if(d.thresholds && d.thresholds.refer>0) TH={warn:d.thresholds.warn, refer:d.thresholds.refer};
   histCache={};
   syncedAt=new Date().toISOString();
   booted=true;
   if(d.school) $("brand").innerHTML='<span class="tick">'+esc(d.school)+'</span> 교복 지도';
-  lsSet(LS_CACHE, {students:d.students||[], logs:logs.slice(0,200), exempts:exempts, th:TH, role:role, at:syncedAt});
+  lsSet(LS_CACHE, {students:d.students||[], logs:logs.slice(0,200), exempts:exempts, adjusts:adjusts.slice(0,50), th:TH, role:role, at:syncedAt});
   applyRole();
   render();
 }
@@ -834,6 +846,7 @@ function loadCache(){
   (c.students||[]).forEach(function(s){ students.set(s.no,s); });
   logs=c.logs||[];
   exempts=c.exempts||[];
+  adjusts=c.adjusts||[];
   if(c.th && c.th.refer>0) TH={warn:c.th.warn, refer:c.th.refer};
   role=c.role||null;
   syncedAt=c.at||null;
@@ -1079,6 +1092,7 @@ function renderRoster(){
   renderExempts();
   renderTh();
   showAdNow();
+  renderAdjusts();
 }
 
 /* ============ 상세 시트 ============ */
@@ -1309,13 +1323,30 @@ function readAdForm(){
   var v = parseInt($("adCount").value, 10);
   if(!(v>=0)){ toast("0 이상의 숫자를 입력해 주세요."); $("adCount").focus(); return null; }
   if(v>999){ toast("999 이하로 입력해 주세요."); $("adCount").focus(); return null; }
-  return {no:adSel.no, name:adSel.name, count:v};
+  var reason = $("adReason").value.trim();
+  if(!reason){ toast("조정 사유를 입력해 주세요."); $("adReason").focus(); return null; }
+  return {no:adSel.no, name:adSel.name, count:v, reason:reason};
 }
 function resetAdForm(){
   adSel = null;
-  $("adQ").value = ""; $("adCount").value = "";
+  $("adQ").value = ""; $("adCount").value = ""; $("adReason").value = "";
   $("adPick").innerHTML = "";
   showAdNow(); $("adHint").textContent = "";
+}
+function renderAdjusts(){
+  var box = $("adList"); if(!box) return;
+  $("adSub").textContent = adjusts.length ? adjusts.length+"건" : "";
+  var show = adjusts.slice(0, 20);
+  box.innerHTML = show.length ? show.map(function(a){
+    return '<li>'+
+      '<span class="when">'+fmtWhen(a.at)+'</span>'+
+      '<div class="body"><b>'+esc(baseName(a.name))+'</b><span class="sid">'+esc(a.no)+'</span>'+
+        '<div class="rsn">'+a.before+'회 → <b>'+a.after+'회</b> · '+esc(a.reason)+
+          (a.by ? ' <span class="who2">— '+esc(a.by)+'</span>' : "")+'</div>'+
+      '</div>'+
+    '</li>';
+  }).join("") + (adjusts.length>show.length ? '<li><div class="note" style="padding:10px 14px">외 '+(adjusts.length-show.length)+'건은 스프레드시트의 <b>조정</b> 시트에서 확인하세요.</div></li>' : "")
+    : '<li><div class="empty" style="width:100%"><strong>조정한 기록이 없습니다</strong>횟수를 맞추면 학번·이름·날짜·사유가 여기와 스프레드시트에 함께 남습니다.</div></li>';
 }
 
 /* ============ 선도위원회 기준 ============ */
@@ -1571,7 +1602,7 @@ $("adGo").addEventListener("click", function(){
     "맞추기").then(function(yes){
       if(!yes) return;
       $("adGo").disabled=true;
-      call("adjust", {no:v.no, count:v.count}).then(function(d){
+      call("adjust", {no:v.no, count:v.count, reason:v.reason, by:me()||"미기재"}).then(function(d){
         toast(baseName(v.name)+" 누적 "+d.count+"회로 맞췄습니다.");
         resetAdForm();
         return refresh(true);
