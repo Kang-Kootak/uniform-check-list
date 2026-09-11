@@ -32,7 +32,8 @@
     --shadow-sm:0 1px 2px rgba(0,0,0,.45);
   }
 }
-:root[data-theme="dark"]{
+:root[data-theme="dark"],
+body[data-app-theme="dark"]{
   color-scheme: dark;
   --ground:#0d1219; --surface:#161d28; --surface-2:#1e2634;
   --ink:#e9edf4; --ink-2:#c3cbd9; --muted:#8c97ab;
@@ -43,6 +44,20 @@
   --crit:#ea7f72; --crit-soft:#3f211d;
   --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 26px rgba(0,0,0,.4);
   --shadow-sm:0 1px 2px rgba(0,0,0,.45);
+}
+
+/* 앱에서 고른 밝기 — 이 휴대폰에만 적용되며 휴대폰 설정보다 우선합니다 */
+body[data-app-theme="light"]{
+  color-scheme: light;
+  --ground:#e8ebf1; --surface:#ffffff; --surface-2:#f3f5f9;
+  --ink:#141a26; --ink-2:#3b465c; --muted:#6a7589;
+  --line:#d5dae4; --line-2:#e7ebf2;
+  --accent:#1f4d7a; --accent-2:#2c6ba3; --accent-ink:#ffffff; --accent-soft:#e2ecf6;
+  --ok:#1f7050; --ok-soft:#dbf0e6;
+  --warn:#9d6404; --warn-soft:#fbeed0;
+  --crit:#a53126; --crit-soft:#f9ddda;
+  --shadow:0 1px 2px rgba(20,26,38,.06), 0 10px 26px rgba(20,26,38,.08);
+  --shadow-sm:0 1px 2px rgba(20,26,38,.07);
 }
 
 *{box-sizing:border-box}
@@ -316,6 +331,16 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
   .nowline .yr{display:none}
 }
 </style>
+<script>
+/* 화면 밝기를 먼저 적용해 깜빡임을 막는다 */
+(function(){
+  try{
+    var t=JSON.parse(localStorage.getItem("gyobok.theme")||'""');
+    if(t==="light"||t==="dark") document.body.setAttribute("data-app-theme",t);
+  }catch(e){}
+})();
+</script>
+
 
 <div class="shell">
   <header class="topbar" id="topbar">
@@ -512,7 +537,7 @@ var REASON = "교복 미착용";   // 적발 사유는 이 한 가지로 통일
 var WD = ["일","월","화","수","목","금","토"];
 var CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
 var LS_DATA = "gyobok.students.v1", LS_ME = "gyobok.me", LS_CID = "gyobok.cid",
-    LS_EXEMPT = "gyobok.exempts.v1", LS_TH = "gyobok.th.v1";
+    LS_EXEMPT = "gyobok.exempts.v1", LS_TH = "gyobok.th.v1", LS_THEME = "gyobok.theme";
 
 /* ============ 상태 ============ */
 var students = new Map();   // sid -> {sid,no,name,grade,klass,num,count,lastAt,history[]}
@@ -1203,14 +1228,21 @@ function askConfirm(title, body, okLabel, danger){
   });
 }
 function askWho(){
-  modal('<div class="sheet-h"><div><h3>기록자 이름</h3><div class="sm" style="font-family:var(--font-ui)">적발 기록에 누가 지도했는지 함께 남습니다</div></div></div>'+
+  modal('<div class="sheet-h"><div><h3>내 설정</h3><div class="sm" style="font-family:var(--font-ui)">이 휴대폰에만 저장됩니다</div></div>'+
+      '<button class="close" type="button" id="wClose" aria-label="닫기">✕</button></div>'+
     '<div class="sheet-b">'+
-    '<div><label class="fl" for="whoIn">이름</label><input class="inp" id="whoIn" placeholder="예: 김선생 / 2학년 선도부 이도현" value="'+esc(me())+'"></div>'+
-    '<p class="note">이 휴대폰에만 저장되며, 기기마다 따로 설정합니다.</p>'+
-    '<div class="btnrow"><button class="btn" type="button" id="wNo">취소</button><button class="btn primary" type="button" id="wYes">저장</button></div></div>');
+    '<div class="block"><h4>기록자 이름</h4>'+
+      '<input class="inp" id="whoIn" placeholder="예: 김선생 / 2학년 선도부 이도현" value="'+esc(me())+'">'+
+      '<p class="note">적발 기록에 누가 지도했는지 함께 남습니다.</p>'+
+      '<button class="btn primary wide" type="button" id="wYes">이름 저장</button>'+
+    '</div>'+
+    '<div class="block"><h4>화면 밝기</h4>'+
+      themeChips()+
+      '<p class="note">이 휴대폰에만 적용됩니다. 눌러 보시면 바로 바뀝니다.</p>'+
+    '</div></div>');
   var i=$("whoIn"); setTimeout(function(){ i.focus(); },60);
-  $("wNo").onclick=closeModal;
-  $("wYes").onclick=function(){ lsSet(LS_ME, i.value.trim()); closeModal(); render(); };
+  $("wClose").onclick=closeModal;
+  $("wYes").onclick=function(){ lsSet(LS_ME, i.value.trim()); closeModal(); render(); toast("이름을 저장했습니다."); };
   i.addEventListener("keydown", function(e){ if(e.key==="Enter") $("wYes").click(); });
 }
 /* ============ 면제 기간 ============ */
@@ -1377,6 +1409,29 @@ function readTh(){
   return {warn:w, refer:r};
 }
 
+/* ============ 화면 밝기 ============ */
+var THEMES = [["","휴대폰 설정"],["light","밝게"],["dark","어둡게"]];
+function themePref(){ var t=lsGet(LS_THEME,""); return (t==="light"||t==="dark")?t:""; }
+function applyTheme(){
+  var t=themePref();
+  if(t) document.body.setAttribute("data-app-theme", t);
+  else document.body.removeAttribute("data-app-theme");
+}
+function setTheme(t){
+  lsSet(LS_THEME, (t==="light"||t==="dark")?t:"");
+  applyTheme();
+  var box=$("thmChips");
+  if(box) Array.prototype.forEach.call(box.querySelectorAll(".chip"), function(c){
+    c.setAttribute("aria-pressed", String(c.getAttribute("data-v")===themePref()));
+  });
+}
+function themeChips(){
+  var cur=themePref();
+  return '<div class="chips" id="thmChips">'+THEMES.map(function(t){
+    return '<button class="chip" type="button" data-act="theme" data-v="'+t[0]+'" aria-pressed="'+(cur===t[0])+'">'+t[1]+'</button>';
+  }).join("")+'</div>';
+}
+
 /* ============ 토스트 ============ */
 var toastTimer=null;
 function toast(msg, actionLabel, action){
@@ -1483,6 +1538,7 @@ document.addEventListener("click", function(ev){
     }, function(e){ toast(dbErr(e)); });
     return;
   }
+  if(act==="theme"){ setTheme(t.getAttribute("data-v")); return; }
   if(act==="adpick"){ pickAdjust(t.getAttribute("data-sid")); return; }
   if(act==="expick"){ pickExempt(t.getAttribute("data-sid")); return; }
   if(act==="exdel"){
@@ -1602,8 +1658,7 @@ $("exGo").addEventListener("click", function(){
   v.id = rid(); v.by = me() || "미기재"; v.at = new Date().toISOString();
   addExempt(v).then(function(){
     toast(baseName(v.name)+" 학생을 "+fmtDay(v.from)+"~"+fmtDay(v.to)+" 면제로 등록했습니다.");
-    resetExForm();
-resetAdForm(); render();
+    resetExForm(); render();
   }, function(e){ toast(dbErr(e)); });
 });
 $("resetCounts").addEventListener("click", function(){
@@ -1648,8 +1703,10 @@ window.addEventListener("scroll", function(){
 }, {passive:true});
 
 /* ============ 시작 ============ */
+applyTheme();
 loadLocal();
 resetExForm();
+resetAdForm();
 render();
 renderNow();
 setInterval(renderNow, 1000);

@@ -38,7 +38,8 @@
     --shadow-sm:0 1px 2px rgba(0,0,0,.45);
   }
 }
-:root[data-theme="dark"]{
+:root[data-theme="dark"],
+body[data-app-theme="dark"]{
   color-scheme: dark;
   --ground:#0d1219; --surface:#161d28; --surface-2:#1e2634;
   --ink:#e9edf4; --ink-2:#c3cbd9; --muted:#8c97ab;
@@ -49,6 +50,20 @@
   --crit:#ea7f72; --crit-soft:#3f211d;
   --shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 26px rgba(0,0,0,.4);
   --shadow-sm:0 1px 2px rgba(0,0,0,.45);
+}
+
+/* 앱에서 고른 밝기 — 이 휴대폰에만 적용되며 휴대폰 설정보다 우선합니다 */
+body[data-app-theme="light"]{
+  color-scheme: light;
+  --ground:#e8ebf1; --surface:#ffffff; --surface-2:#f3f5f9;
+  --ink:#141a26; --ink-2:#3b465c; --muted:#6a7589;
+  --line:#d5dae4; --line-2:#e7ebf2;
+  --accent:#1f4d7a; --accent-2:#2c6ba3; --accent-ink:#ffffff; --accent-soft:#e2ecf6;
+  --ok:#1f7050; --ok-soft:#dbf0e6;
+  --warn:#9d6404; --warn-soft:#fbeed0;
+  --crit:#a53126; --crit-soft:#f9ddda;
+  --shadow:0 1px 2px rgba(20,26,38,.06), 0 10px 26px rgba(20,26,38,.08);
+  --shadow-sm:0 1px 2px rgba(20,26,38,.07);
 }
 
 *{box-sizing:border-box}
@@ -323,6 +338,7 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
 }
 </style>
 
+
 <style>
 /* Apps Script 전용 보완 */
 html,body{margin:0;padding:0}
@@ -338,6 +354,15 @@ a.btn{text-decoration:none}
 </style>
 </head>
 <body>
+<script>
+/* 화면 밝기를 먼저 적용해 깜빡임을 막는다 */
+(function(){
+  try{
+    var t=JSON.parse(localStorage.getItem("gyobok.theme")||'""');
+    if(t==="light"||t==="dark") document.body.setAttribute("data-app-theme",t);
+  }catch(e){}
+})();
+</script>
 <div class="shell">
   <header class="topbar" id="topbar">
     <div class="brandrow">
@@ -540,7 +565,7 @@ a.btn{text-decoration:none}
 /* ============ 상수 ============ */
 var WD = ["일","월","화","수","목","금","토"];
 var CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
-var LS_CACHE="gyobok.cache.v2", LS_ME="gyobok.me", LS_PIN="gyobok.pin";
+var LS_CACHE="gyobok.cache.v2", LS_ME="gyobok.me", LS_PIN="gyobok.pin", LS_THEME="gyobok.theme";
 var POLL_MS=20000, IDLE_MS=15*60*1000;
 
 /* ============ 상태 ============ */
@@ -1127,6 +1152,10 @@ function askWho(){
       '<p class="note">적발 기록에 누가 지도했는지 함께 남습니다.</p>'+
       '<button class="btn primary wide" type="button" id="wYes">이름 저장</button>'+
     '</div>'+
+    '<div class="block"><h4>화면 밝기</h4>'+
+      themeChips()+
+      '<p class="note">이 휴대폰에만 적용됩니다. 눌러 보시면 바로 바뀝니다.</p>'+
+    '</div>'+
     '<div class="block"><h4>접속 권한</h4>'+
       '<div class="kv"><span class="k">현재</span><span class="v" style="font-family:var(--font-ui)">'+esc(roleLabel())+'</span></div>'+
       '<button class="btn wide" type="button" id="wPin">PIN 다시 입력</button>'+
@@ -1311,6 +1340,29 @@ function readTh(){
   return {warn:w, refer:r};
 }
 
+/* ============ 화면 밝기 ============ */
+var THEMES = [["","휴대폰 설정"],["light","밝게"],["dark","어둡게"]];
+function themePref(){ var t=lsGet(LS_THEME,""); return (t==="light"||t==="dark")?t:""; }
+function applyTheme(){
+  var t=themePref();
+  if(t) document.body.setAttribute("data-app-theme", t);
+  else document.body.removeAttribute("data-app-theme");
+}
+function setTheme(t){
+  lsSet(LS_THEME, (t==="light"||t==="dark")?t:"");
+  applyTheme();
+  var box=$("thmChips");
+  if(box) Array.prototype.forEach.call(box.querySelectorAll(".chip"), function(c){
+    c.setAttribute("aria-pressed", String(c.getAttribute("data-v")===themePref()));
+  });
+}
+function themeChips(){
+  var cur=themePref();
+  return '<div class="chips" id="thmChips">'+THEMES.map(function(t){
+    return '<button class="chip" type="button" data-act="theme" data-v="'+t[0]+'" aria-pressed="'+(cur===t[0])+'">'+t[1]+'</button>';
+  }).join("")+'</div>';
+}
+
 /* ============ 토스트 ============ */
 var toastTimer=null;
 function toast(msg, actionLabel, action){
@@ -1415,6 +1467,7 @@ document.addEventListener("click", function(ev){
     });
     return;
   }
+  if(act==="theme"){ setTheme(t.getAttribute("data-v")); return; }
   if(act==="adpick"){ pickAdjust(t.getAttribute("data-sid")); return; }
   if(act==="expick"){ pickExempt(t.getAttribute("data-sid")); return; }
   if(act==="exdel"){
@@ -1538,7 +1591,6 @@ $("exGo").addEventListener("click", function(){
   call("ex_add", {no:v.no, reason:v.reason, from:v.from, to:v.to, by:me()||"미기재"}).then(function(){
     toast(baseName(v.name)+" 학생을 "+fmtDay(v.from)+"~"+fmtDay(v.to)+" 면제로 등록했습니다.");
     resetExForm();
-resetAdForm();
     return refresh(true);
   }, function(e){ toast(errMsg(e)); }).then(function(){ $("exGo").disabled = false; });
 });
@@ -1575,8 +1627,10 @@ document.addEventListener("visibilitychange", function(){
 });
 
 /* ============ 시작 ============ */
+applyTheme();
 loadCache();
 resetExForm();
+resetAdForm();
 render();
 renderNow();
 setInterval(renderNow, 1000);
