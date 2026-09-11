@@ -7,7 +7,7 @@
  */
 
 var SH_R = '명단', SH_L = '기록', SH_C = '설정', SH_E = '면제';
-var HDR_R = ['학번', '이름', '학년', '반', '번호', '누적횟수', '최근적발'];
+var HDR_R = ['학번', '이름', '학년', '반', '번호', '누적횟수', '최근적발', '조정'];
 var HDR_L = ['기록ID', '일시', '학번', '이름', '학년', '반', '사유', '메모', '기록자'];
 var HDR_E = ['면제ID', '학번', '이름', '사유', '시작일', '종료일', '등록자', '등록일시'];
 var EXEMPT_LIMIT = 500;
@@ -34,9 +34,7 @@ function 초기설정() {
   PropertiesService.getScriptProperties().setProperty('ssid', ss.getId());
 
   var rs = ss.getSheetByName(SH_R) || ss.insertSheet(SH_R);
-  if (rs.getLastRow() === 0 || String(rs.getRange(1, 1).getValue()).trim() !== HDR_R[0]) {
-    rs.getRange(1, 1, 1, HDR_R.length).setValues([HDR_R]);
-  }
+  rs.getRange(1, 1, 1, HDR_R.length).setValues([HDR_R]);
   rs.getRange(1, 1, 1, HDR_R.length).setFontWeight('bold').setBackground('#e2ecf6');
   rs.setFrozenRows(1);
   rs.setColumnWidth(1, 90); rs.setColumnWidth(2, 110); rs.setColumnWidth(7, 150);
@@ -139,6 +137,7 @@ function api(p) {
       case 'ex_add':  return admin ? ok_(exemptAdd_(p)) : deny_();
       case 'ex_del':  return admin ? ok_(exemptDel_(String(p.id || ''))) : deny_();
       case 'th_set':  return admin ? ok_(saveThresholds_(p)) : deny_();
+      case 'adjust':  return admin ? ok_(adjustCount_(p)) : deny_();
       case 'reset':   return admin ? ok_(resetCounts_()) : deny_();
       case 'wipe':    return admin ? ok_(wipeRoster_()) : deny_();
       case 'backup':  return admin ? ok_({ id: 백업사본() }) : deny_();
@@ -181,7 +180,7 @@ function boot_(role) {
   var students = [];
   var last = rs.getLastRow();
   if (last >= 2) {
-    var vals = rs.getRange(2, 1, last - 1, 7).getValues();
+    var vals = rs.getRange(2, 1, last - 1, 8).getValues();
     for (var i = 0; i < vals.length; i++) {
       var no = normNo_(vals[i][0]);
       if (!no) continue;
@@ -190,7 +189,8 @@ function boot_(role) {
         name: String(vals[i][1] || '').trim(),
         grade: num_(vals[i][2]), klass: num_(vals[i][3]), num: num_(vals[i][4]),
         count: num_(vals[i][5]) || 0,
-        lastAt: iso_(vals[i][6])
+        lastAt: iso_(vals[i][6]),
+        adjust: num_(vals[i][7]) || 0
       });
     }
   }
@@ -406,6 +406,45 @@ function undoRecord_(p) {
   }
 }
 
+/** 기록 시트에 남은 실제 적발 건수 */
+function countRecords_(ss, no) {
+  var ls = sheet_(ss, SH_L);
+  var last = ls.getLastRow();
+  if (last < 2) return 0;
+  var vals = ls.getRange(2, 3, last - 1, 1).getValues();
+  var n = 0;
+  for (var i = 0; i < vals.length; i++) if (normNo_(vals[i][0]) === no) n++;
+  return n;
+}
+
+/**
+ * 누적 횟수를 원하는 숫자로 맞춘다.
+ * 기록은 그대로 두고, 실제 건수와의 차이를 명단의 '조정' 칸에 남긴다.
+ *   누적횟수 = 실제 기록 수 + 조정
+ */
+function adjustCount_(p) {
+  var no = normNo_(p.no);
+  var target = parseInt(p.count, 10);
+  if (!no) throw new Error('학생을 선택해 주세요.');
+  if (!(target >= 0)) throw new Error('0 이상의 숫자를 입력해 주세요.');
+  if (target > 999) throw new Error('999 이하로 입력해 주세요.');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('잠시 후 다시 시도해 주세요.');
+  try {
+    var ss = ss_(), rs = sheet_(ss, SH_R);
+    var row = rosterIndex_(rs)[no];
+    if (!row) throw new Error('명단에 없는 학번입니다.');
+    var records = countRecords_(ss, no);
+    var adjust = target - records;
+    rs.getRange(row, 6).setValue(target);
+    rs.getRange(row, 8).setValue(adjust);
+    bumpRev_();
+    return { no: no, count: target, records: records, adjust: adjust };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function putStudent_(p) {
   var no = normNo_(p.no), name = String(p.name || '').trim();
   var oldNo = normNo_(p.oldNo || p.no);
@@ -418,18 +457,18 @@ function putStudent_(p) {
     var d = derive_(no);
     if (oldNo && oldNo !== no && idx[oldNo]) {
       // 학번 변경: 기존 행을 옮기고 기록의 학번·이름도 갱신
-      var old = rs.getRange(idx[oldNo], 1, 1, 7).getValues()[0];
+      var old = rs.getRange(idx[oldNo], 1, 1, 8).getValues()[0];
       rs.deleteRow(idx[oldNo]);
       idx = rosterIndex_(rs);
-      var keep = [no, name, d.grade, d.klass, d.num, num_(old[5]) || 0, old[6] || ''];
-      if (idx[no]) rs.getRange(idx[no], 1, 1, 7).setValues([keep]);
+      var keep = [no, name, d.grade, d.klass, d.num, num_(old[5]) || 0, old[6] || '', num_(old[7]) || 0];
+      if (idx[no]) rs.getRange(idx[no], 1, 1, 8).setValues([keep]);
       else rs.appendRow(keep);
       renameInLog_(ls, oldNo, no, name, d);
     } else if (idx[no]) {
       rs.getRange(idx[no], 2, 1, 4).setValues([[name, d.grade, d.klass, d.num]]);
       renameInLog_(ls, no, no, name, d);
     } else {
-      rs.appendRow([no, name, d.grade, d.klass, d.num, 0, '']);
+      rs.appendRow([no, name, d.grade, d.klass, d.num, 0, '', 0]);
     }
     sortRoster_(rs);
     bumpRev_();
@@ -472,7 +511,7 @@ function bulkRoster_(list) {
     var last = rs.getLastRow();
     var cur = {}, order = [];
     if (last >= 2) {
-      var vals = rs.getRange(2, 1, last - 1, 7).getValues();
+      var vals = rs.getRange(2, 1, last - 1, 8).getValues();
       for (var i = 0; i < vals.length; i++) {
         var n = normNo_(vals[i][0]);
         if (!n || cur[n]) continue;
@@ -484,14 +523,14 @@ function bulkRoster_(list) {
       var s = list[j], no = normNo_(s.no), name = String(s.name || '').trim();
       if (!no || !name) continue;
       var d = derive_(no);
-      if (cur[no]) { cur[no] = [no, name, d.grade, d.klass, d.num, num_(cur[no][5]) || 0, cur[no][6] || '']; updated++; }
-      else { cur[no] = [no, name, d.grade, d.klass, d.num, 0, '']; order.push(no); added++; }
+      if (cur[no]) { cur[no] = [no, name, d.grade, d.klass, d.num, num_(cur[no][5]) || 0, cur[no][6] || '', num_(cur[no][7]) || 0]; updated++; }
+      else { cur[no] = [no, name, d.grade, d.klass, d.num, 0, '', 0]; order.push(no); added++; }
     }
     var keys = order.slice().sort(cmpNo_);
     var rows = [];
     for (var k = 0; k < keys.length; k++) rows.push(cur[keys[k]]);
-    if (last >= 2) rs.getRange(2, 1, last - 1, 7).clearContent();
-    if (rows.length) rs.getRange(2, 1, rows.length, 7).setValues(rows);
+    if (last >= 2) rs.getRange(2, 1, last - 1, 8).clearContent();
+    if (rows.length) rs.getRange(2, 1, rows.length, 8).setValues(rows);
     bumpRev_();
     return { total: rows.length, added: added, updated: updated };
   } finally {
@@ -509,8 +548,8 @@ function resetCounts_() {
     var lastR = rs.getLastRow();
     if (lastR >= 2) {
       var zeros = [];
-      for (var i = 0; i < lastR - 1; i++) zeros.push([0, '']);
-      rs.getRange(2, 6, lastR - 1, 2).setValues(zeros);
+      for (var i = 0; i < lastR - 1; i++) zeros.push([0, '', 0]);
+      rs.getRange(2, 6, lastR - 1, 3).setValues(zeros);
     }
     bumpRev_();
     return { cleared: Math.max(0, lastL - 1) };
@@ -621,8 +660,10 @@ function recalcOne_(ss, no) {
     }
   }
   var row = rosterIndex_(rs)[no];
-  if (row) rs.getRange(row, 6, 1, 2).setValues([[count, lastAt || '']]);
-  return { count: count, lastAt: iso_(lastAt) };
+  var adjust = row ? (num_(rs.getRange(row, 8).getValue()) || 0) : 0;
+  var total = Math.max(0, count + adjust);
+  if (row) rs.getRange(row, 6, 1, 2).setValues([[total, lastAt || '']]);
+  return { count: total, lastAt: iso_(lastAt) };
 }
 
 function renameInLog_(ls, oldNo, newNo, name, d) {
@@ -641,10 +682,10 @@ function renameInLog_(ls, oldNo, newNo, name, d) {
 function sortRoster_(rs) {
   var last = rs.getLastRow();
   if (last < 3) return;
-  var vals = rs.getRange(2, 1, last - 1, 7).getValues().filter(function (r) { return normNo_(r[0]); });
+  var vals = rs.getRange(2, 1, last - 1, 8).getValues().filter(function (r) { return normNo_(r[0]); });
   vals.sort(function (a, b) { return cmpNo_(normNo_(a[0]), normNo_(b[0])); });
-  rs.getRange(2, 1, last - 1, 7).clearContent();
-  if (vals.length) rs.getRange(2, 1, vals.length, 7).setValues(vals);
+  rs.getRange(2, 1, last - 1, 8).clearContent();
+  if (vals.length) rs.getRange(2, 1, vals.length, 8).setValues(vals);
 }
 
 function cmpNo_(a, b) { return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0); }
