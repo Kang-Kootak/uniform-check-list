@@ -495,7 +495,7 @@ var REASON="교복 미착용";   // 적발 사유는 이 한 가지로 통일
 var students=new Map(), logs=[], exempts=[], histCache={};
 var role=null, pinSet=true, sheetUrl="", logLimit=1000, rev=0;
 var tab="check", period="all", klassFilter="all", shown=40;
-var busy=new Set(), forceOk=false, inflight=0, lastAct=Date.now(), syncedAt=null, booted=false;
+var busy=new Set(), inflight=0, lastAct=Date.now(), syncedAt=null, booted=false;
 
 /* ============ 유틸 ============ */
 function $(id){ return document.getElementById(id); }
@@ -620,27 +620,18 @@ function statusOf(s){
   if(ex) return {
     kind:"exempt",
     html:function(big){ return exemptNote(ex, big); },
-    btn:"그래도 적발 기록하기",
-    title:"교복 지도 대상이 아닙니다",
-    body:function(nm){ return "<b>"+nm+"</b> 학생은 <b>"+esc(ex.kind)+"</b>으로 교복 지도 대상에서 제외됩니다.<br>그래도 적발 기록을 남길까요?"; },
     toast:function(nm){ return nm+" 학생은 교복 지도 대상이 아닙니다."; }
   };
   var pe=periodExemptOf(s.no);
   if(pe) return {
     kind:"period",
     html:function(big){ return periodNote(pe, big); },
-    btn:"그래도 적발 기록하기",
-    title:"면제 기간인 학생입니다",
-    body:function(nm){ return "<b>"+nm+"</b> 학생은 <b>"+esc(pe.reason)+"</b> 사유로 "+esc(fmtDay(pe.from)+" ~ "+fmtDay(pe.to))+" 교복 지도에서 면제됩니다.<br>그래도 적발 기록을 남길까요?"; },
     toast:function(nm){ return nm+" 학생은 "+fmtDay(pe.from)+"~"+fmtDay(pe.to)+" 면제 기간입니다."; }
   };
   var dn=checkedToday(s);
   if(dn) return {
     kind:"done",
     html:function(big){ return checkNote(dn, big); },
-    btn:"그래도 한 번 더 기록하기",
-    title:"오늘 이미 체크된 학생입니다",
-    body:function(nm){ return "<b>"+nm+"</b> 학생은 <b>"+whenToday(dn)+"</b>에 이미 체크됐습니다.<br>하루 한 번만 기록하는 것이 원칙입니다. 그래도 한 번 더 기록할까요?"; },
     toast:function(nm){ return nm+" 학생은 "+whenToday(dn)+"에 이미 체크됐습니다."; }
   };
   return null;
@@ -875,7 +866,7 @@ function renderCheck(){
         '<div class="rsn">'+esc(r.reason)+(r.memo?" · "+esc(r.memo):"")+' <span class="who2">— '+esc(r.by)+'</span></div>'+
       '</div>'+
       (r.pending ? '<span class="undo" style="border:0">전송 중</span>'
-        : '<button class="undo" type="button" data-act="undo" data-sid="'+esc(r.no)+'" data-eid="'+esc(r.id)+'">취소</button>')+
+        : (canEdit() ? '<button class="undo" type="button" data-act="undo" data-sid="'+esc(r.no)+'" data-eid="'+esc(r.id)+'" data-at="'+esc(r.at)+'">취소</button>' : ""))+
     '</li>';
   }).join("") : '<li><div class="empty" style="width:100%"><strong>아직 기록이 없습니다</strong>위 검색창에 학생 이름을 입력하고 <b>+1</b>을 누르면 여기에 쌓입니다.</div></li>';
 }
@@ -996,7 +987,7 @@ function drawSheet(err){
   else histHtml='<ul class="hist">'+hist.map(function(e){
       return '<li><span class="d">'+fmtDT(e.at)+'</span>'+
         '<span class="r">'+esc(e.reason)+(e.memo?" · "+esc(e.memo):"")+'<small>기록 '+esc(e.by)+'</small></span>'+
-        '<button class="undo" type="button" data-act="undo" data-sid="'+esc(s.no)+'" data-eid="'+esc(e.id)+'">삭제</button></li>';
+        (canEdit() ? '<button class="undo" type="button" data-act="undo" data-sid="'+esc(s.no)+'" data-eid="'+esc(e.id)+'" data-at="'+esc(e.at)+'">삭제</button>' : "")+'</li>';
     }).join("")+'</ul>';
 
   $("sheetIn").innerHTML=
@@ -1006,13 +997,8 @@ function drawSheet(err){
     '<div class="sheet-b">'+
       '<div class="bigcount"><b style="'+(c>=3?"color:var(--crit)":(c>0?"color:var(--warn)":""))+'">'+c+'</b><span>회 누적 적발</span></div>'+
       (st ? st.html(true) : "")+
-      (st ? '<button class="btn wide" type="button" data-act="record" data-force="1">'+st.btn+'</button>'
-          : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
+      (st ? "" : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
       '<div class="block"><h4>적발 이력'+(hist&&hist.length?" ("+hist.length+")":"")+'</h4>'+histHtml+'</div>'+
-      (role==="admin" ? '<div class="admin">'+
-        '<button type="button" data-act="editstudent">학생 정보 수정</button>'+
-        '<button type="button" class="d" data-act="delstudent">명단에서 삭제</button>'+
-      '</div>' : "")+
     '</div>';
 }
 
@@ -1074,27 +1060,6 @@ function askPin(wrong){
   $("pinYes").onclick=go;
   i.addEventListener("keydown", function(e){ if(e.key==="Enter") go(); });
 }
-function editStudent(no){
-  var s=students.get(no); if(!s) return;
-  modal('<div class="sheet-h"><div><h3>학생 정보 수정</h3></div></div>'+
-    '<div class="sheet-b">'+
-    '<div style="display:flex;gap:8px"><div style="flex:1"><label class="fl" for="eNo">학번</label><input class="inp" id="eNo" inputmode="numeric" value="'+esc(s.no)+'"></div>'+
-    '<div style="flex:1"><label class="fl" for="eName">이름</label><input class="inp" id="eName" value="'+esc(s.name)+'"></div></div>'+
-    '<p class="note">학번을 바꾸면 지난 적발 기록의 학번도 함께 바뀝니다.</p>'+
-    '<div class="btnrow"><button class="btn" type="button" id="eNoBtn">취소</button><button class="btn primary" type="button" id="eYes">저장</button></div></div>');
-  $("eNoBtn").onclick=closeModal;
-  $("eYes").onclick=function(){
-    var newNo=$("eNo").value.replace(/\D/g,""), nm=$("eName").value.trim();
-    if(!newNo||!nm){ toast("학번과 이름을 모두 입력해 주세요."); return; }
-    closeModal();
-    call("put",{no:newNo, name:nm, oldNo:s.no}).then(function(){
-      sheetNo=newNo; histCache={};
-      return refresh(true);
-    }).then(function(){ toast("수정했습니다."); if($("sheet").open) drawSheet(); },
-      function(e){ toast(errMsg(e)); });
-  };
-}
-
 /* ============ 면제 기간 ============ */
 var exSel = null;
 function renderExPick(){
@@ -1153,6 +1118,16 @@ function readExForm(){
   return {no:exSel.no, name:exSel.name, reason:reason, from:from, to:to};
 }
 
+/* 기록 취소 권한 — 관리 PIN만 */
+function canEdit(){ return role==="admin"; }
+function isPastRecord(at){ return !!at && dayKey(at)!==todayKey(); }
+function confirmUndo(at, name){
+  if(!isPastRecord(at)) return Promise.resolve(true);
+  return askConfirm("지난 기록 삭제",
+    "<b>"+esc(name||"")+"</b> 학생의 <b>"+esc(fmtDT(at))+"</b> 기록을 지웁니다.<br>오늘 기록이 아니므로 되돌리기 어렵습니다. 계속할까요?",
+    "삭제", true);
+}
+
 /* ============ 토스트 ============ */
 var toastTimer=null;
 function toast(msg, actionLabel, action){
@@ -1188,7 +1163,8 @@ function doPlus(no, btn){
     if(histCache[no]) histCache[no].unshift({id:d.id, at:d.at, reason:tmp.reason, memo:"", by:tmp.by});
     render();
     if(sheetNo===no && $("sheet").open) drawSheet();
-    toast(baseName(s.name)+" 적발 기록 · 누적 "+d.count+"회", "취소", function(){ doUndo(no, d.id); });
+    if(canEdit()) toast(baseName(s.name)+" 적발 기록 · 누적 "+d.count+"회", "취소", function(){ doUndo(no, d.id, d.at); });
+    else toast(baseName(s.name)+" 적발 기록 · 누적 "+d.count+"회");
     done();
   }, function(e){
     s.count=prevCount; s.lastAt=prevLast;
@@ -1202,9 +1178,13 @@ function doPlus(no, btn){
     done();
   });
 }
-function doUndo(no, id){
+function doUndo(no, id, at){
   if(String(id).indexOf("tmp_")===0){ toast("기록이 전송되는 중입니다. 잠시 후 다시 눌러주세요."); return; }
+  if(!canEdit()){ toast("기록 취소는 관리 PIN이 필요합니다. 학생부 선생님께 요청하세요."); return; }
   var s=students.get(no);
+  confirmUndo(at, s?baseName(s.name):"").then(function(yes){ if(yes) runUndo(no, id, s); });
+}
+function runUndo(no, id, s){
   var keep=logs.slice();
   logs=logs.filter(function(x){ return x.id!==id; });
   if(s) s.count=Math.max(0,(s.count||1)-1);
@@ -1234,20 +1214,12 @@ document.addEventListener("click", function(ev){
   if(act==="open"){ openSheet(sid); return; }
   if(act==="more"){ shown+=40; renderCheck(); return; }
   if(act==="closesheet"){ $("sheet").close(); return; }
-  if(act==="undo"){ doUndo(sid, t.getAttribute("data-eid")); return; }
+  if(act==="undo"){ doUndo(sid, t.getAttribute("data-eid"), t.getAttribute("data-at")); return; }
   if(act==="record"){
-    var stx=students.get(sheetNo); if(!stx) return;
-    var stt=statusOf(stx);
-    if(stt && !forceOk){
-      askConfirm(stt.title, stt.body(esc(baseName(stx.name))), "기록", false)
-        .then(function(yes){ if(!yes) return; forceOk=true; t.click(); forceOk=false; });
-      return;
-    }
-    forceOk=false;
     var no=sheetNo, s=students.get(no);
-    if(!s) return;
+    if(!s || statusOf(s)) return;
     t.disabled=true;
-    call("add",{no:no, by:me()||"미기재", force:!!stt}).then(function(d){
+    call("add",{no:no, by:me()||"미기재"}).then(function(d){
       s.count=d.count; s.lastAt=d.at; rev=d.rev;
       var e={id:d.id, at:d.at, reason:REASON, memo:"", by:me()||"미기재"};
       if(histCache[no]) histCache[no].unshift(e);
@@ -1258,18 +1230,6 @@ document.addEventListener("click", function(ev){
       if(e && e.err==="DUP"){ if(e.at) s.lastAt=e.at; render(); drawSheet(); }
       toast(errMsg(e)); t.disabled=false;
     });
-    return;
-  }
-  if(act==="editstudent"){ editStudent(sheetNo); return; }
-  if(act==="delstudent"){
-    var st=students.get(sheetNo); if(!st) return;
-    askConfirm("명단에서 삭제","<b>"+esc(baseName(st.name))+"</b> ("+esc(st.no)+") 학생을 명단에서 지웁니다. 적발 기록 "+(st.count||0)+"건도 함께 삭제되며 되돌릴 수 없습니다.","삭제",true)
-      .then(function(yes){
-        if(!yes) return;
-        call("del",{no:st.no}).then(function(){
-          $("sheet").close(); toast("삭제했습니다."); return refresh(true);
-        }, function(e){ toast(errMsg(e)); });
-      });
     return;
   }
   if(act==="expick"){ pickExempt(t.getAttribute("data-sid")); return; }

@@ -128,7 +128,7 @@ function api(p) {
       case 'boot':    return ok_(boot_(role));
       case 'history': return ok_({ no: normNo_(p.no), items: history_(normNo_(p.no)) });
       case 'add':     return ok_(addRecord_(p));
-      case 'undo':    return ok_(undoRecord_(p));
+      case 'undo':    return admin ? ok_(undoRecord_(p)) : deny_();
       case 'bulk':    return admin ? ok_(bulkRoster_(p.list || [])) : deny_();
       case 'put':     return admin ? ok_(putStudent_(p)) : deny_();
       case 'del':     return admin ? ok_(delStudent_(normNo_(p.no))) : deny_();
@@ -331,8 +331,8 @@ function addRecord_(p) {
     if (!row) throw new Error('명단에 없는 학번입니다. 명단을 먼저 등록해 주세요.');
     var info = rs.getRange(row, 1, 1, 7).getValues()[0];
     var now = new Date();
-    // 하루 한 번 원칙 — 오늘 이미 기록된 학생은 막는다 (force가 있으면 통과)
-    if (!p.force && sameDay_(info[6], now)) {
+    // 하루 한 번 원칙 — 오늘 이미 기록된 학생은 막는다
+    if (sameDay_(info[6], now)) {
       throw { dup: true, at: iso_(info[6]), count: num_(info[5]) || 0,
               message: '오늘 이미 체크된 학생입니다.' };
     }

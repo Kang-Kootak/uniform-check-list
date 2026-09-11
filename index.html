@@ -466,7 +466,7 @@ var students = new Map();   // sid -> {sid,no,name,grade,klass,num,count,lastAt,
 var exempts = [];           // 면제 기간 [{id,no,name,reason,from,to,by}]
 var db = null, backend = "local", dbReady = false;
 var tab = "check", period = "all", klassFilter = "all", shown = 40;
-var busy = new Set(), forceOk = false;
+var busy = new Set();
 
 /* ============ 유틸 ============ */
 function $(id){ return document.getElementById(id); }
@@ -594,27 +594,18 @@ function statusOf(s){
   if(ex) return {
     kind:"exempt",
     html:function(big){ return exemptNote(ex, big); },
-    btn:"그래도 적발 기록하기",
-    title:"교복 지도 대상이 아닙니다",
-    body:function(nm){ return "<b>"+nm+"</b> 학생은 <b>"+esc(ex.kind)+"</b>으로 교복 지도 대상에서 제외됩니다.<br>그래도 적발 기록을 남길까요?"; },
     toast:function(nm){ return nm+" 학생은 교복 지도 대상이 아닙니다."; }
   };
   var pe=periodExemptOf(s.no);
   if(pe) return {
     kind:"period",
     html:function(big){ return periodNote(pe, big); },
-    btn:"그래도 적발 기록하기",
-    title:"면제 기간인 학생입니다",
-    body:function(nm){ return "<b>"+nm+"</b> 학생은 <b>"+esc(pe.reason)+"</b> 사유로 "+esc(fmtDay(pe.from)+" ~ "+fmtDay(pe.to))+" 교복 지도에서 면제됩니다.<br>그래도 적발 기록을 남길까요?"; },
     toast:function(nm){ return nm+" 학생은 "+fmtDay(pe.from)+"~"+fmtDay(pe.to)+" 면제 기간입니다."; }
   };
   var dn=checkedToday(s);
   if(dn) return {
     kind:"done",
     html:function(big){ return checkNote(dn, big); },
-    btn:"그래도 한 번 더 기록하기",
-    title:"오늘 이미 체크된 학생입니다",
-    body:function(nm){ return "<b>"+nm+"</b> 학생은 <b>"+whenToday(dn)+"</b>에 이미 체크됐습니다.<br>하루 한 번만 기록하는 것이 원칙입니다. 그래도 한 번 더 기록할까요?"; },
     toast:function(nm){ return nm+" 학생은 "+whenToday(dn)+"에 이미 체크됐습니다."; }
   };
   return null;
@@ -976,7 +967,7 @@ function renderCheck(){
       '<div class="body"><b>'+esc(baseName(r.name))+'</b><span class="sid">'+esc(r.no)+'</span>'+
         '<div class="rsn">'+esc(r.e.reason)+(r.e.memo? " · "+esc(r.e.memo):"")+' <span class="who2">— '+esc(r.e.by)+'</span></div>'+
       '</div>'+
-      '<button class="undo" type="button" data-act="undo" data-sid="'+esc(r.sid)+'" data-eid="'+esc(r.e.id)+'">취소</button>'+
+      '<button class="undo" type="button" data-act="undo" data-sid="'+esc(r.sid)+'" data-eid="'+esc(r.e.id)+'" data-at="'+esc(r.e.at)+'">취소</button>'+
     '</li>';
   }).join("") : '<li><div class="empty" style="width:100%"><strong>아직 기록이 없습니다</strong>위 검색창에 학생 이름을 입력하고 <b>+1</b>을 누르면 여기에 쌓입니다.</div></li>';
 }
@@ -1061,18 +1052,13 @@ function drawSheet(){
     '<div class="sheet-b">'+
       '<div class="bigcount"><b class="'+(c>=3?"crit":"")+'" style="'+(c>=3?"color:var(--crit)":(c>0?"color:var(--warn)":""))+'">'+c+'</b><span>회 누적 적발</span></div>'+
       (st ? st.html(true) : "")+
-      (st ? '<button class="btn wide" type="button" data-act="record" data-force="1">'+st.btn+'</button>'
-          : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
+      (st ? "" : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
       '<div class="block"><h4>적발 이력 '+(hist.length?"("+hist.length+")":"")+'</h4>'+
         (hist.length ? '<ul class="hist">'+hist.map(function(e){
           return '<li><span class="d">'+fmtDT(e.at)+'</span>'+
             '<span class="r">'+esc(e.reason)+(e.memo?" · "+esc(e.memo):"")+'<small>기록 '+esc(e.by)+'</small></span>'+
-            '<button class="undo" type="button" data-act="undo" data-sid="'+esc(s.sid)+'" data-eid="'+esc(e.id)+'">삭제</button></li>';
+            '<button class="undo" type="button" data-act="undo" data-sid="'+esc(s.sid)+'" data-eid="'+esc(e.id)+'" data-at="'+esc(e.at)+'">삭제</button></li>';
         }).join("")+'</ul>' : '<p class="note">아직 적발 기록이 없습니다.</p>')+
-      '</div>'+
-      '<div class="admin">'+
-        '<button type="button" data-act="editstudent">학생 정보 수정</button>'+
-        '<button type="button" class="d" data-act="delstudent">명단에서 삭제</button>'+
       '</div>'+
     '</div>';
 }
@@ -1105,36 +1091,6 @@ function askWho(){
   $("wYes").onclick=function(){ lsSet(LS_ME, i.value.trim()); closeModal(); render(); };
   i.addEventListener("keydown", function(e){ if(e.key==="Enter") $("wYes").click(); });
 }
-function editStudent(sid){
-  var s=students.get(sid); if(!s) return;
-  modal('<div class="sheet-h"><div><h3>학생 정보 수정</h3></div></div>'+
-    '<div class="sheet-b">'+
-    '<div style="display:flex;gap:8px"><div style="flex:1"><label class="fl" for="eNo">학번</label><input class="inp" id="eNo" inputmode="numeric" value="'+esc(s.no)+'"></div>'+
-    '<div style="flex:1"><label class="fl" for="eName">이름</label><input class="inp" id="eName" value="'+esc(s.name)+'"></div></div>'+
-    '<p class="note">학번을 바꾸면 새 학번으로 옮겨지고 적발 이력도 함께 이동합니다.</p>'+
-    '<div class="btnrow"><button class="btn" type="button" id="eNoBtn">취소</button><button class="btn primary" type="button" id="eYes">저장</button></div></div>');
-  $("eNoBtn").onclick=closeModal;
-  $("eYes").onclick=function(){
-    var no=$("eNo").value.replace(/\D/g,""), nm=$("eName").value.trim();
-    if(!no||!nm){ toast("학번과 이름을 모두 입력해 주세요."); return; }
-    var f=fromNo(no);
-    var body = Object.assign({}, s, {sid:f.no,no:f.no,name:nm,grade:f.grade,klass:f.klass,num:f.num});
-    closeModal();
-    var work;
-    if(f.no!==s.sid){
-      work = (backend==="db"
-        ? retry(function(){ return db.doc("students/"+f.no).set(body); }).then(function(){ return delStudent(s.sid); })
-        : Promise.resolve().then(function(){ students.delete(s.sid); students.set(f.no, body); saveLocal(); render(); }));
-      sheetSid = f.no;
-    } else {
-      work = (backend==="db"
-        ? retry(function(){ return db.doc("students/"+f.no).set(body); })
-        : Promise.resolve().then(function(){ students.set(f.no, body); saveLocal(); render(); }));
-    }
-    work.then(function(){ toast("수정했습니다."); drawSheet(); }, function(e){ toast(dbErr(e)); });
-  };
-}
-
 /* ============ 면제 기간 ============ */
 var exSel = null;
 function renderExPick(){
@@ -1191,6 +1147,28 @@ function readExForm(){
   if(!from || !to){ toast("시작일과 종료일을 모두 선택해 주세요."); (from?$("exTo"):$("exFrom")).focus(); return null; }
   if(from > to){ toast("종료일이 시작일보다 빠릅니다."); $("exTo").focus(); return null; }
   return {no:exSel.no, name:exSel.name, reason:reason, from:from, to:to};
+}
+
+/* 기록 취소 권한 — 관리 PIN만 */
+function canEdit(){ return true; }
+function isPastRecord(at){ return !!at && dayKey(at)!==todayKey(); }
+function confirmUndo(at, name){
+  if(!isPastRecord(at)) return Promise.resolve(true);
+  return askConfirm("지난 기록 삭제",
+    "<b>"+esc(name||"")+"</b> 학생의 <b>"+esc(fmtDT(at))+"</b> 기록을 지웁니다.<br>오늘 기록이 아니므로 되돌리기 어렵습니다. 계속할까요?",
+    "삭제", true);
+}
+
+function doUndo(sid, id, at){
+  if(!canEdit()){ toast("기록 취소 권한이 없습니다."); return; }
+  var s = students.get(sid);
+  confirmUndo(at, s ? baseName(s.name) : "").then(function(yes){
+    if(!yes) return;
+    removeRecord(sid, id).then(function(){
+      toast("기록을 취소했습니다.");
+      if(sheetSid===sid && $("sheet").open) drawSheet();
+    }, function(e){ toast(dbErr(e)); });
+  });
 }
 
 /* ============ 토스트 ============ */
@@ -1267,7 +1245,7 @@ function doPlus(sid, btn){
     if(row){ row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); }
     var next = (students.get(sid)||{}).count || ((s.count||0)+1);
     toast(baseName(s.name)+" 적발 기록 · 누적 "+next+"회", "취소", function(){
-      removeRecord(sid, entry.id).then(function(){ toast("취소했습니다."); }, function(e){ toast(dbErr(e)); });
+      doUndo(sid, entry.id, entry.at);
     });
     if(sheetSid===sid) drawSheet();
   }, function(e){
@@ -1287,37 +1265,16 @@ document.addEventListener("click", function(ev){
   if(act==="open"){ openSheet(sid); return; }
   if(act==="more"){ shown += 40; renderCheck(); return; }
   if(act==="closesheet"){ $("sheet").close(); return; }
-  if(act==="undo"){
-    var eid=t.getAttribute("data-eid");
-    removeRecord(sid, eid).then(function(){ toast("기록을 취소했습니다."); if(sheetSid===sid) drawSheet(); },
-      function(e){ toast(dbErr(e)); });
-    return;
-  }
+  if(act==="undo"){ doUndo(sid, t.getAttribute("data-eid"), t.getAttribute("data-at")); return; }
   if(act==="record"){
-    var stx=students.get(sheetSid); if(!stx) return;
-    var stt=statusOf(stx);
-    if(stt && !forceOk){
-      askConfirm(stt.title, stt.body(esc(baseName(stx.name))), "기록", false)
-        .then(function(yes){ if(!yes) return; forceOk=true; t.click(); forceOk=false; });
-      return;
-    }
-    forceOk=false;
     var sid2 = sheetSid;
-    addRecord(sid2, !!stt).then(function(){
+    var stx = students.get(sid2);
+    if(!stx || statusOf(stx)) return;
+    addRecord(sid2).then(function(){
       var st=students.get(sid2)||{};
       toast(baseName(st.name)+" 적발 기록 · 누적 "+(st.count||0)+"회");
       drawSheet();
     }, function(e){ toast(dbErr(e)); });
-    return;
-  }
-  if(act==="editstudent"){ editStudent(sheetSid); return; }
-  if(act==="delstudent"){
-    var s=students.get(sheetSid); if(!s) return;
-    askConfirm("명단에서 삭제", "<b>"+esc(baseName(s.name))+"</b> ("+esc(s.no)+") 학생을 명단에서 지웁니다. 적발 이력 "+(s.count||0)+"건도 함께 삭제되며 되돌릴 수 없습니다.", "삭제", true)
-      .then(function(yes){
-        if(!yes) return;
-        delStudent(s.sid).then(function(){ $("sheet").close(); toast("삭제했습니다."); }, function(e){ toast(dbErr(e)); });
-      });
     return;
   }
   if(act==="expick"){ pickExempt(t.getAttribute("data-sid")); return; }
