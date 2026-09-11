@@ -12,6 +12,8 @@ var HDR_L = ['기록ID', '일시', '학번', '이름', '학년', '반', '사유'
 var HDR_E = ['면제ID', '학번', '이름', '사유', '시작일', '종료일', '등록자', '등록일시'];
 var EXEMPT_LIMIT = 500;
 var REASON = '교복 미착용';   // 적발 사유는 이 한 가지로 통일
+var DEF_WARN = 10;            // 이 횟수부터 회부 경고를 띄운다
+var DEF_REFER = 15;           // 이 횟수에 도달하면 학생선도위원회 회부 대상
 var LOG_LIMIT = 1000;      // 앱이 한 번에 받아가는 최근 기록 수
 var CFG_TTL = 30;          // 설정 캐시 (초). PIN을 바꾸면 최대 이만큼 뒤에 적용됩니다.
 
@@ -64,6 +66,8 @@ function 초기설정() {
     cs.getRange(2, 3, 3, 1).setWrap(true);
     cs.setFrozenRows(1);
   }
+  setCfg_(cs, '경고기준', DEF_WARN, '누적 적발이 이 횟수에 이르면 앱에 회부 경고가 뜹니다. 앱의 [명단 → 선도위원회 기준]에서도 고칠 수 있습니다.');
+  setCfg_(cs, '회부기준', DEF_REFER, '누적 적발이 이 횟수에 도달하면 학생선도위원회 회부 대상으로 표시합니다.');
   ss.setSpreadsheetTimeZone('Asia/Seoul');
   bumpRev_();
   cache_().remove('cfg');
@@ -134,6 +138,7 @@ function api(p) {
       case 'del':     return admin ? ok_(delStudent_(normNo_(p.no))) : deny_();
       case 'ex_add':  return admin ? ok_(exemptAdd_(p)) : deny_();
       case 'ex_del':  return admin ? ok_(exemptDel_(String(p.id || ''))) : deny_();
+      case 'th_set':  return admin ? ok_(saveThresholds_(p)) : deny_();
       case 'reset':   return admin ? ok_(resetCounts_()) : deny_();
       case 'wipe':    return admin ? ok_(wipeRoster_()) : deny_();
       case 'backup':  return admin ? ok_({ id: 백업사본() }) : deny_();
@@ -195,6 +200,7 @@ function boot_(role) {
     students: students,
     logs: recentLogs_(LOG_LIMIT),
     exempts: readExempts_(),
+    thresholds: thresholds_(cfg),
     school: String(cfg['학교명'] || '').trim(),
     pinSet: !!(String(cfg['기록PIN'] || '').trim() || String(cfg['관리PIN'] || '').trim()),
     sheetUrl: role === 'admin' ? ss.getUrl() : '',
@@ -239,6 +245,41 @@ function history_(no) {
   }
   out.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
   return out;
+}
+
+/** 선도위원회 기준 — 설정 시트 값이 없거나 이상하면 기본값 */
+function thresholds_(cfg) {
+  cfg = cfg || config_();
+  var w = parseInt(cfg['경고기준'], 10);
+  var r = parseInt(cfg['회부기준'], 10);
+  if (!(w > 0)) w = DEF_WARN;
+  if (!(r > 0)) r = DEF_REFER;
+  if (w > r) w = r;
+  return { warn: w, refer: r };
+}
+
+function saveThresholds_(p) {
+  var w = parseInt(p.warn, 10), r = parseInt(p.refer, 10);
+  if (!(w > 0) || !(r > 0)) throw new Error('기준 횟수를 1 이상으로 입력해 주세요.');
+  if (w > 99 || r > 99) throw new Error('기준 횟수는 99 이하로 입력해 주세요.');
+  if (w > r) throw new Error('경고 시작 횟수가 회부 기준보다 클 수 없습니다.');
+  var cs = sheet_(ss_(), SH_C);
+  setCfg_(cs, '경고기준', w, '누적 적발이 이 횟수에 이르면 앱에 회부 경고가 뜹니다.');
+  setCfg_(cs, '회부기준', r, '누적 적발이 이 횟수에 도달하면 학생선도위원회 회부 대상으로 표시합니다.');
+  cache_().remove('cfg');
+  bumpRev_();
+  return { warn: w, refer: r };
+}
+
+/** 설정 시트의 한 줄을 고치거나, 없으면 만든다 */
+function setCfg_(cs, key, value, desc) {
+  var row = cfgRow_(cs, key);
+  if (row) {
+    cs.getRange(row, 2).setValue(value);
+  } else {
+    cs.appendRow([key, value, desc || '']);
+    cs.getRange(cs.getLastRow(), 3).setWrap(true);
+  }
 }
 
 /** 면제 시트는 나중에 추가된 기능이라, 없으면 그때 만든다 */

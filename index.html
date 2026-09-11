@@ -149,6 +149,25 @@ ul{margin:0;padding:0;list-style:none}
 .rownote .sub{display:block;margin-top:4px;color:var(--muted);font-size:12.5px}
 .rownote.done{background:var(--ok-soft);color:var(--ok);
   border-color:color-mix(in srgb,var(--ok) 30%,transparent)}
+
+/* ---------- 선도위원회 회부 경고 ---------- */
+.refnote{padding:9px 11px;border-radius:10px;font-size:12.5px;line-height:1.4;
+  background:var(--warn-soft);color:var(--warn);
+  border:1px solid color-mix(in srgb,var(--warn) 30%,transparent)}
+.refnote .t{display:flex;align-items:baseline;gap:8px}
+.refnote b{font-weight:600;font-size:13.5px;letter-spacing:-.01em}
+.refnote .t span{margin-left:auto;flex:none;opacity:.75;
+  font-family:var(--font-mono);font-size:11.5px;font-variant-numeric:tabular-nums}
+.refnote .rbar{height:6px;border-radius:3px;margin-top:7px;overflow:hidden;
+  background:color-mix(in srgb,var(--warn) 18%,transparent)}
+.refnote .rbar i{display:block;height:100%;border-radius:3px;background:var(--warn)}
+.refnote.over{background:var(--crit-soft);color:var(--crit);
+  border-color:color-mix(in srgb,var(--crit) 34%,transparent)}
+.refnote.over .rbar{background:color-mix(in srgb,var(--crit) 18%,transparent)}
+.refnote.over .rbar i{background:var(--crit)}
+.refnote.big{padding:12px 14px;border-radius:12px}
+.refnote.big b{font-size:15px}
+.cnt.a{background:var(--surface-2);color:var(--ink-2);border-color:var(--line)}
 .chips.picks{margin-top:8px}
 .chips.picks .chip .no{color:var(--muted);font-family:var(--font-mono);font-size:12px;margin-left:5px}
 input[type="date"].inp{min-height:46px}
@@ -185,6 +204,8 @@ input[type="date"].inp{min-height:46px}
 .rank .fill.w{background:var(--warn)}
 .rank .fill.c{background:var(--crit)}
 .rank .num{font-family:var(--font-mono);font-size:14px;font-weight:600;flex:none;font-variant-numeric:tabular-nums}
+.rank .num.over{color:var(--crit)}
+.rank .num{white-space:nowrap;font-size:12.5px}
 .rank.slots li{padding:12px 14px}
 .rank.slots .track{height:8px;border-radius:4px;margin-top:7px}
 .rank.slots .num{font-size:15px}
@@ -342,6 +363,10 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
         <div class="seg" id="classSeg"></div>
       </div>
       <div>
+        <div class="sect-h" style="margin-bottom:8px"><h2>선도위원회 대상</h2><span class="sub" id="referSub"></span></div>
+        <div class="card"><ul class="rank" id="referList"></ul></div>
+      </div>
+      <div>
         <div class="sect-h" style="margin-bottom:8px"><h2>시간대별</h2><span class="sub" id="slotSub"></span></div>
         <div class="card"><ul class="rank slots" id="slotBreak"></ul></div>
       </div>
@@ -421,6 +446,17 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
       </div>
 
       <div class="card pad" style="display:flex;flex-direction:column;gap:10px">
+        <div class="sect-h" style="margin-bottom:2px"><h2>선도위원회 기준</h2></div>
+        <p class="note">학교 규정에 맞춰 고치시면 앱 전체에 바로 반영됩니다.</p>
+        <div style="display:flex;gap:8px">
+          <div style="flex:1"><label class="fl" for="thWarn">경고 시작</label><input class="inp" id="thWarn" type="number" inputmode="numeric" min="1" max="99"></div>
+          <div style="flex:1"><label class="fl" for="thRefer">회부 기준</label><input class="inp" id="thRefer" type="number" inputmode="numeric" min="1" max="99"></div>
+        </div>
+        <p class="note" id="thHint"></p>
+        <button class="btn wide" id="thGo" type="button">기준 저장</button>
+      </div>
+
+      <div class="card pad" style="display:flex;flex-direction:column;gap:10px">
         <div class="sect-h" style="margin-bottom:2px"><h2>정리</h2></div>
         <div class="btnrow">
           <button class="btn" id="resetCounts" type="button">적발 기록만 초기화</button>
@@ -459,7 +495,7 @@ var REASON = "교복 미착용";   // 적발 사유는 이 한 가지로 통일
 var WD = ["일","월","화","수","목","금","토"];
 var CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
 var LS_DATA = "gyobok.students.v1", LS_ME = "gyobok.me", LS_CID = "gyobok.cid",
-    LS_EXEMPT = "gyobok.exempts.v1";
+    LS_EXEMPT = "gyobok.exempts.v1", LS_TH = "gyobok.th.v1";
 
 /* ============ 상태 ============ */
 var students = new Map();   // sid -> {sid,no,name,grade,klass,num,count,lastAt,history[]}
@@ -610,7 +646,31 @@ function statusOf(s){
   };
   return null;
 }
-function lvl(n){ return n<=0?"":(n<3?"w":"c"); }
+/* 선도위원회 기준 — 경고 시작(warn) · 회부(refer) */
+var TH = {warn:10, refer:15};
+function referLeft(count){
+  var c=count||0;
+  if(c>=TH.refer) return 0;
+  if(c>=TH.warn) return TH.refer-c;
+  return -1;                       // -1 = 아직 경고 구간 아님
+}
+function referSuffix(count){
+  var left=referLeft(count);
+  if(left<0) return "";
+  return left===0 ? " · 선도위원회 회부 대상" : " · 회부까지 "+left+"회";
+}
+function referNote(count, big){
+  var c=count||0, left=referLeft(c);
+  if(left<0) return "";
+  var pct=Math.min(100, Math.round(c/Math.max(TH.refer,1)*100));
+  var over = left===0;
+  return '<div class="refnote'+(over?" over":"")+(big?" big":"")+'">'+
+    '<div class="t"><b>'+(over ? "선도위원회 회부 대상" : "회부까지 "+left+"회 남음")+'</b>'+
+      '<span>누적 '+c+'회 / 기준 '+TH.refer+'회</span></div>'+
+    '<div class="rbar"><i style="width:'+pct+'%"></i></div>'+
+  '</div>';
+}
+function lvl(n){ return n<=0 ? "" : (n>=TH.refer ? "c" : (n>=TH.warn ? "w" : "a")); }
 function labelOf(s){
   if(s.grade) return s.grade+"학년 "+s.klass+"반 "+s.num+"번";
   return "";
@@ -663,6 +723,8 @@ function loadLocal(){
   if(Array.isArray(arr)) arr.forEach(function(s){ if(s && s.sid) students.set(s.sid, s); });
   var x = lsGet(LS_EXEMPT, null);
   if(Array.isArray(x)) exempts = x;
+  var t = lsGet(LS_TH, null);
+  if(t && t.refer>0) TH = {warn:t.warn, refer:t.refer};
 }
 
 function withLease(ref, fn){
@@ -767,6 +829,13 @@ function removeRecord(sid, entryId){
     s.history=h; s.count=h.length; s.lastAt = h.length? h[h.length-1].at : null; return s;
   });
 }
+function saveThresholds(v){
+  TH={warn:v.warn, refer:v.refer};
+  lsSet(LS_TH, TH);
+  if(backend!=="db"){ render(); return Promise.resolve(); }
+  return retry(function(){ return db.doc("meta/settings").set({warnAt:v.warn, referAt:v.refer, updatedAt:new Date().toISOString()}); });
+}
+
 function addExempt(rec){
   if(backend!=="db"){
     exempts = exempts.concat([rec]); saveExemptsLocal(); render(); return Promise.resolve();
@@ -802,6 +871,10 @@ function connect(){
       toast(dbErr(e));
       if(e && (e.code==="revoked"||e.code==="not_granted")){ backend="local"; setStore("local"); }
     });
+    db.doc("meta/settings").onSnapshot(function(snap){
+      var v = snap.exists ? snap.data() : null;
+      if(v && v.referAt>0){ TH={warn:v.warnAt||TH.warn, refer:v.referAt}; lsSet(LS_TH, TH); render(); }
+    }, function(){});
     db.collection("exempts").onSnapshot(function(snap){
       exempts = snap.docs.map(function(d){
         var v = d.data() || {}; if(!v.id) v.id = d.id; return v;
@@ -886,7 +959,7 @@ function renderBanner(){
 var dbReadyChecked=false;
 
 function studentRow(s){
-  var c=s.count||0, st=statusOf(s), nm=baseName(s.name);
+  var c=s.count||0, st=statusOf(s), nm=baseName(s.name), ref=referNote(c,false);
   var meta=['<span class="sid">'+esc(s.no)+'</span>'];
   var lb=labelOf(s); if(lb) meta.push("<span>"+esc(lb)+"</span>");
   if(!st && s.lastAt) meta.push("<span>최근 "+fmtShort(s.lastAt)+"</span>");
@@ -894,16 +967,15 @@ function studentRow(s){
       '<div class="nm">'+esc(nm)+'</div>'+
       '<div class="meta">'+meta.join('<span aria-hidden="true">·</span>')+'</div>'+
     '</button>';
-  if(st){
+  var chip='<span class="cnt '+lvl(c)+'">'+c+'회</span>';
+  var plus='<button class="plus" type="button" data-act="plus" data-sid="'+esc(s.sid)+'" aria-label="'+esc(nm)+' 적발 1회 추가">+1</button>';
+  if(st || ref){
     return '<div class="row noted" data-sid="'+esc(s.sid)+'">'+
-      '<div class="noted-top">'+idbtn+(c>0?'<span class="cnt '+lvl(c)+'">'+c+'회</span>':"")+'</div>'+
-      st.html(false)+
+      '<div class="noted-top">'+idbtn+(c>0?chip:"")+(st?"":plus)+'</div>'+
+      (st?st.html(false):"")+ref+
     '</div>';
   }
-  return '<div class="row" data-sid="'+esc(s.sid)+'">'+idbtn+
-    '<span class="cnt '+lvl(c)+'">'+c+'회</span>'+
-    '<button class="plus" type="button" data-act="plus" data-sid="'+esc(s.sid)+'" aria-label="'+esc(nm)+' 적발 1회 추가">+1</button>'+
-  '</div>';
+  return '<div class="row" data-sid="'+esc(s.sid)+'">'+idbtn+chip+plus+'</div>';
 }
 function searchList(q){
   q = q.trim();
@@ -952,12 +1024,12 @@ function renderCheck(){
   var tk = todayKey();
   var todayRecs = recs.filter(function(r){ return dayKey(r.e.at)===tk; });
   var todayPeople = {}; todayRecs.forEach(function(r){ todayPeople[r.sid]=1; });
-  var repeat = 0; students.forEach(function(s){ if((s.count||0)>=3) repeat++; });
+  var repeat = 0; students.forEach(function(s){ if((s.count||0)>=TH.warn) repeat++; });
 
   $("todayTiles").innerHTML =
     tile(Object.keys(todayPeople).length, "명", "오늘 적발 학생", todayRecs.length>0) +
     tile(recs.length, "건", "누적 적발 기록", false) +
-    tile(repeat, "명", "3회 이상 누적", repeat>0);
+    tile(repeat, "명", TH.warn+"회 이상 누적", repeat>0);
 
   $("recentSub").textContent = recs.length ? "최근 " + Math.min(recs.length,12) + "건" : "";
   var recent = recs.slice(0,12);
@@ -1019,6 +1091,22 @@ function renderStats(){
     '</li>';
   }).join("") : '<li><div class="empty" style="width:100%"><strong>해당 기간 기록 없음</strong>기간이나 학급을 바꿔 보세요.</div></li>';
 
+  var refPool=[];
+  students.forEach(function(s){ if(referLeft(s.count||0)>=0) refPool.push(s); });
+  refPool.sort(function(a,b){ return (b.count||0)-(a.count||0) || ((a.no||"")<(b.no||"")?-1:1); });
+  var overN=0;
+  for(var ri=0;ri<refPool.length;ri++) if((refPool[ri].count||0)>=TH.refer) overN++;
+  $("referSub").textContent = refPool.length ? (overN?"회부 대상 "+overN+"명 · ":"")+"경고 "+(refPool.length-overN)+"명" : "";
+  $("referList").innerHTML = refPool.length ? refPool.slice(0,40).map(function(s){
+    var c=s.count||0, left=referLeft(c);
+    return '<li>'+
+      '<div class="bar"><div class="t"><b>'+esc(baseName(s.name))+'</b>'+
+        '<span>'+esc(s.no)+(labelOf(s)?" · "+esc(labelOf(s)):"")+' · 누적 '+c+'회</span></div>'+
+        '<div class="track"><i class="fill '+lvl(c)+'" style="width:'+Math.min(100,Math.round(c/Math.max(TH.refer,1)*100))+'%"></i></div></div>'+
+      '<span class="num '+(left===0?"over":"")+'">'+(left===0?"회부":left+"회 전")+'</span>'+
+    '</li>';
+  }).join("") : '<li><div class="empty" style="width:100%"><strong>해당 학생이 없습니다</strong>누적 '+TH.warn+'회 이상이 되면 여기에 표시됩니다.</div></li>';
+
   $("slotSub").textContent = recs.length ? recs.length+"건" : "";
   $("slotBreak").innerHTML = slotRows(recs.map(function(r){ return r.e.at; }));
 
@@ -1031,6 +1119,7 @@ function renderRoster(){
   $("cntRecords").textContent = total;
   $("cntExempt").textContent = exn+"명";
   renderExempts();
+  renderTh();
 }
 
 /* ============ 시트 ============ */
@@ -1051,6 +1140,7 @@ function drawSheet(){
       '<button class="close" type="button" data-act="closesheet" aria-label="닫기">✕</button></div>'+
     '<div class="sheet-b">'+
       '<div class="bigcount"><b class="'+(c>=3?"crit":"")+'" style="'+(c>=3?"color:var(--crit)":(c>0?"color:var(--warn)":""))+'">'+c+'</b><span>회 누적 적발</span></div>'+
+      referNote(c, true)+
       (st ? st.html(true) : "")+
       (st ? "" : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
       '<div class="block"><h4>적발 이력 '+(hist.length?"("+hist.length+")":"")+'</h4>'+
@@ -1171,6 +1261,28 @@ function doUndo(sid, id, at){
   });
 }
 
+/* ============ 선도위원회 기준 ============ */
+function renderTh(){
+  if(!$("thWarn")) return;
+  if(document.activeElement!==$("thWarn")) $("thWarn").value = TH.warn;
+  if(document.activeElement!==$("thRefer")) $("thRefer").value = TH.refer;
+  thHint();
+}
+function thHint(){
+  var w=parseInt($("thWarn").value,10), r=parseInt($("thRefer").value,10);
+  var el=$("thHint");
+  if(!(w>0)||!(r>0)){ el.textContent="두 칸 모두 1 이상으로 입력해 주세요."; return; }
+  if(w>r){ el.innerHTML='<span style="color:var(--crit)">경고 시작이 회부 기준보다 클 수 없습니다.</span>'; return; }
+  el.innerHTML='누적 <b>'+w+'회</b>부터 회부 경고가 뜨고, <b>'+r+'회</b>에 도달하면 회부 대상으로 표시됩니다.';
+}
+function readTh(){
+  var w=parseInt($("thWarn").value,10), r=parseInt($("thRefer").value,10);
+  if(!(w>0)||!(r>0)){ toast("기준 횟수를 1 이상으로 입력해 주세요."); return null; }
+  if(w>99||r>99){ toast("기준 횟수는 99 이하로 입력해 주세요."); return null; }
+  if(w>r){ toast("경고 시작 횟수가 회부 기준보다 클 수 없습니다."); return null; }
+  return {warn:w, refer:r};
+}
+
 /* ============ 토스트 ============ */
 var toastTimer=null;
 function toast(msg, actionLabel, action){
@@ -1244,7 +1356,7 @@ function doPlus(sid, btn){
     var row = document.querySelector('.row[data-sid="'+CSS.escape(sid)+'"]');
     if(row){ row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); }
     var next = (students.get(sid)||{}).count || ((s.count||0)+1);
-    toast(baseName(s.name)+" 적발 기록 · 누적 "+next+"회", "취소", function(){
+    toast(baseName(s.name)+" 적발 기록 · 누적 "+next+"회"+referSuffix(next), "취소", function(){
       doUndo(sid, entry.id, entry.at);
     });
     if(sheetSid===sid) drawSheet();
@@ -1272,7 +1384,7 @@ document.addEventListener("click", function(ev){
     if(!stx || statusOf(stx)) return;
     addRecord(sid2).then(function(){
       var st=students.get(sid2)||{};
-      toast(baseName(st.name)+" 적발 기록 · 누적 "+(st.count||0)+"회");
+      toast(baseName(st.name)+" 적발 기록 · 누적 "+(st.count||0)+"회"+referSuffix(st.count||0));
       drawSheet();
     }, function(e){ toast(dbErr(e)); });
     return;
@@ -1361,6 +1473,15 @@ $("oneGo").addEventListener("click", function(){
   putStudent(st).then(function(){
     toast(nm+" 학생을 추가했습니다.");
     $("oneNo").value=""; $("oneName").value=""; $("oneNo").focus(); render();
+  }, function(e){ toast(dbErr(e)); });
+});
+$("thWarn").addEventListener("input", thHint);
+$("thRefer").addEventListener("input", thHint);
+$("thGo").addEventListener("click", function(){
+  var v=readTh(); if(!v) return;
+  saveThresholds(v).then(function(){
+    toast("기준을 저장했습니다. 경고 "+v.warn+"회 · 회부 "+v.refer+"회");
+    render();
   }, function(e){ toast(dbErr(e)); });
 });
 $("exQ").addEventListener("input", renderExPick);
