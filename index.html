@@ -1410,23 +1410,30 @@ function readTh(){
 }
 
 /* ============ 화면 밝기 ============ */
-var THEMES = [["","휴대폰 설정"],["light","밝게"],["dark","어둡게"]];
+var THEMES = [["light","밝게"],["dark","어둡게"]];
 function themePref(){ var t=lsGet(LS_THEME,""); return (t==="light"||t==="dark")?t:""; }
+/** 아직 고르지 않았으면 휴대폰 설정을 따른다 */
+function systemTheme(){
+  try{ return (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light"; }
+  catch(e){ return "light"; }
+}
+function themeNow(){ return themePref() || systemTheme(); }
 function applyTheme(){
   var t=themePref();
   if(t) document.body.setAttribute("data-app-theme", t);
   else document.body.removeAttribute("data-app-theme");
 }
 function setTheme(t){
-  lsSet(LS_THEME, (t==="light"||t==="dark")?t:"");
+  if(t!=="light" && t!=="dark") return;
+  lsSet(LS_THEME, t);
   applyTheme();
   var box=$("thmChips");
   if(box) Array.prototype.forEach.call(box.querySelectorAll(".chip"), function(c){
-    c.setAttribute("aria-pressed", String(c.getAttribute("data-v")===themePref()));
+    c.setAttribute("aria-pressed", String(c.getAttribute("data-v")===t));
   });
 }
 function themeChips(){
-  var cur=themePref();
+  var cur=themeNow();
   return '<div class="chips" id="thmChips">'+THEMES.map(function(t){
     return '<button class="chip" type="button" data-act="theme" data-v="'+t[0]+'" aria-pressed="'+(cur===t[0])+'">'+t[1]+'</button>';
   }).join("")+'</div>';
