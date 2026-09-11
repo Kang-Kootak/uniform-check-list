@@ -1234,25 +1234,51 @@ function resetExForm(){
   $("exPick").innerHTML = "";
   $("exFrom").value = todayKey(); $("exTo").value = "";
 }
+var EX_OLD_NOTE  = "끝난 면제는 스프레드시트의 면제 시트에서 확인하세요.";
+var EX_MORE_NOTE = '진행 중·예정인 면제는 모두 보여드리고, <b>끝난 면제</b>는 최근 한 달 안의 5건까지만 보여드립니다. 나머지는 스프레드시트의 <b>면제</b> 시트에서 확인하세요.';
+var EX_SHOW = 5;      // 끝난 면제를 보여줄 최대 건수
+/** 한 달 전 날짜 (yyyy-mm-dd) — 이보다 전에 끝난 면제는 목록에서 뺀다 */
+function monthAgoDay(){
+  var d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());
+}
+function exemptRow(e){
+  var st = exStatus(e);
+  var cls = st==="진행 중" ? "" : (st==="예정" ? "soon" : "off");
+  return '<li'+(st==="종료"?' class="past"':'')+'>'+
+    '<div class="body"><b>'+esc(baseName(e.name))+'</b><span class="sid">'+esc(e.no)+'</span>'+
+      '<span class="tagx '+cls+'">'+st+'</span>'+
+      '<div class="rsn">'+esc(e.reason)+' · '+esc(fmtDay(e.from)+" ~ "+fmtDay(e.to))+
+        (e.by ? ' <span class="who2">— '+esc(e.by)+'</span>' : "")+'</div>'+
+    '</div>'+
+    '<button class="undo" type="button" data-act="exdel" data-eid="'+esc(e.id)+'">삭제</button>'+
+  '</li>';
+}
 function renderExempts(){
   var box = $("exList"); if(!box) return;
-  var live = 0;
-  for(var i=0;i<exempts.length;i++) if(exStatus(exempts[i])==="진행 중") live++;
-  $("exSub").textContent = exempts.length ? "진행 중 "+live+" · 전체 "+exempts.length : "";
-  var show = exempts.slice(0, 40);
-  box.innerHTML = show.length ? show.map(function(e){
-    var st = exStatus(e);
-    var cls = st==="진행 중" ? "" : (st==="예정" ? "soon" : "off");
-    return '<li'+(st==="종료"?' class="past"':'')+'>'+
-      '<div class="body"><b>'+esc(baseName(e.name))+'</b><span class="sid">'+esc(e.no)+'</span>'+
-        '<span class="tagx '+cls+'">'+st+'</span>'+
-        '<div class="rsn">'+esc(e.reason)+' · '+esc(fmtDay(e.from)+" ~ "+fmtDay(e.to))+
-          (e.by ? ' <span class="who2">— '+esc(e.by)+'</span>' : "")+'</div>'+
-      '</div>'+
-      '<button class="undo" type="button" data-act="exdel" data-eid="'+esc(e.id)+'">삭제</button>'+
-    '</li>';
-  }).join("") + (exempts.length>show.length ? '<li><div class="note" style="padding:10px 14px">외 '+(exempts.length-show.length)+'건은 스프레드시트에서 확인하세요.</div></li>' : "")
-    : '<li><div class="empty" style="width:100%"><strong>등록된 면제가 없습니다</strong>부상 등으로 지도에서 빼야 할 학생이 있으면 위에서 등록하세요.</div></li>';
+  var cut = monthAgoDay();
+  var live = [], soon = [], done = [];
+  for(var i=0;i<exempts.length;i++){
+    var e = exempts[i], st = exStatus(e);
+    if(st === "진행 중") live.push(e);
+    else if(st === "예정") soon.push(e);
+    else if((e.to || "") >= cut) done.push(e);     // 최근 한 달 안에 끝난 것만
+  }
+  var doneShown = done.slice(0, EX_SHOW);
+  var shown = live.concat(soon, doneShown);
+  $("exSub").textContent = shown.length
+    ? "진행 중 "+live.length + (soon.length ? " · 예정 "+soon.length : "") : "";
+  if(!shown.length){
+    box.innerHTML = '<li><div class="empty" style="width:100%">'+
+      (exempts.length ? '<strong>진행 중인 면제가 없습니다</strong>'+EX_OLD_NOTE
+                      : '<strong>등록된 면제가 없습니다</strong>부상 등으로 지도에서 빼야 할 학생이 있으면 위에서 등록하세요.')+
+      '</div></li>';
+    return;
+  }
+  box.innerHTML = shown.map(exemptRow).join("") +
+    (exempts.length > shown.length
+      ? '<li><div class="note" style="padding:10px 14px">'+EX_MORE_NOTE+'</div></li>' : "");
 }
 function readExForm(){
   if(!exSel){ toast("학생을 먼저 선택해 주세요."); $("exQ").focus(); return null; }
