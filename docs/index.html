@@ -76,9 +76,10 @@ a.plain{display:inline-block;margin-top:12px;color:#9fc4e4;font-size:13px}
   <!-- 주소를 알고 있고, 홈 화면에 추가하러 들어왔을 때 -->
   <div id="ready" class="box" hidden>
     <h2>준비가 끝났습니다</h2>
-    <p>앱 주소가 이 휴대폰에 저장되었습니다. 홈 화면에 추가하셨으면 아래 버튼으로 앱을 열어보세요.
+    <p>홈 화면에 추가하셨으면 아래 버튼으로 앱을 열어보세요.
        다음부터는 홈 화면 아이콘을 누르면 이 화면 없이 바로 열립니다.</p>
     <a id="go" class="btn" href="#">앱 열기</a>
+    <p style="margin-top:10px;font-size:11.5px;color:#8fa6bd;word-break:break-all" id="which"></p>
     <a id="reset" class="plain" href="#">저장된 주소 지우기</a>
   </div>
 
@@ -86,6 +87,9 @@ a.plain{display:inline-block;margin-top:12px;color:#9fc4e4;font-size:13px}
 
 <script>
 (function(){
+  /* 우리 학교 앱 주소 — 앱스 스크립트에서 새로 배포해 주소가 바뀌면 이 줄만 고치면 됩니다 */
+  var APP_URL = "https://script.google.com/macros/s/AKfycbwwaJL60iuVFaxEwJEa6abOSl4qW3inkfZkM6--xDXiVGjGg1Y2sNzrB4grM4fqYC8-/exec";
+
   var KEY = "gyobok.appurl";
   var $ = function(id){ return document.getElementById(id); };
 
@@ -108,6 +112,9 @@ a.plain{display:inline-block;margin-top:12px;color:#9fc4e4;font-size:13px}
   var url = q.get("u") || q.get("app") || "";
   if(!ok(url)) url = "";
   if(url) keep(url);
+  /* 링크로 받은 주소 > 페이지에 적어둔 주소 > 이 휴대폰에 저장해 둔 주소 */
+  var builtin = false;
+  if(!url && ok(APP_URL)){ url = APP_URL; builtin = true; }
   if(!url) url = ok(saved()) ? saved() : "";
 
   /* 주소를 알고, 설정하러 온 것이 아니면 곧장 앱으로 */
@@ -120,9 +127,14 @@ a.plain{display:inline-block;margin-top:12px;color:#9fc4e4;font-size:13px}
   if(url){
     $("ready").hidden = false;
     $("go").href = url;
-    $("reset").addEventListener("click", function(e){
-      e.preventDefault(); forget(); location.reload();
-    });
+    $("which").textContent = url;
+    if(builtin){
+      $("reset").hidden = true;     // 페이지에 적어둔 주소라 지울 것이 없습니다
+    } else {
+      $("reset").addEventListener("click", function(e){
+        e.preventDefault(); forget(); location.reload();
+      });
+    }
     return;
   }
 
