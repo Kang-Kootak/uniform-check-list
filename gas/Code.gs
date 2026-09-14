@@ -18,6 +18,9 @@ var REASON = '교복 미착용';   // 적발 사유는 이 한 가지로 통일
 var DEF_WARN = 10;            // 이 횟수부터 회부 경고를 띄운다
 var DEF_REFER = 15;           // 이 횟수에 도달하면 학생선도위원회 회부 대상
 var LOG_LIMIT = 1000;      // 앱이 한 번에 받아가는 최근 기록 수
+/* 앱 아이콘 — 휴대폰 홈 화면과 브라우저 탭에 쓰는 그림.
+   설정 시트의 '아이콘주소' 에 다른 https 주소를 넣으면 그 그림을 씁니다. */
+var ICON_URL = 'https://raw.githubusercontent.com/Kang-Kootak/uniform-check-list/refs/heads/claude/uniform-violation-tracking-app-8aesk5/icon/app-icon-512.png';
 var CFG_TTL = 30;          // 설정 캐시 (초). PIN을 바꾸면 최대 이만큼 뒤에 적용됩니다.
 
 /* ─────────────────────────── 스프레드시트 메뉴 ─────────────────────────── */
@@ -71,8 +74,9 @@ function 초기설정() {
     cs.getRange(2, 3, 3, 1).setWrap(true);
     cs.setFrozenRows(1);
   }
-  setCfg_(cs, '경고기준', DEF_WARN, '누적 적발이 이 횟수에 이르면 앱에 회부 경고가 뜹니다. 앱의 [명단 → 선도위원회 기준]에서도 고칠 수 있습니다.');
-  setCfg_(cs, '회부기준', DEF_REFER, '누적 적발이 이 횟수에 도달하면 학생선도위원회 회부 대상으로 표시합니다.');
+  addCfg_(cs, '경고기준', DEF_WARN, '누적 적발이 이 횟수에 이르면 앱에 회부 경고가 뜹니다. 앱의 [명단 → 선도위원회 기준]에서도 고칠 수 있습니다.');
+  addCfg_(cs, '회부기준', DEF_REFER, '누적 적발이 이 횟수에 도달하면 학생선도위원회 회부 대상으로 표시합니다.');
+  addCfg_(cs, '아이콘주소', '', '홈 화면·브라우저 탭에 쓰는 앱 아이콘 그림 주소(https). 비워두면 기본 교복 아이콘을 씁니다.');
   ss.setSpreadsheetTimeZone('Asia/Seoul');
   bumpRev_();
   cache_().remove('cfg');
@@ -122,7 +126,14 @@ function 기록초기화() {
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('교복 지도 수첩')
+    .setFaviconUrl(iconUrl_())
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+}
+
+/** 설정 시트에 적어둔 아이콘 주소가 있으면 그것을, 없으면 기본 아이콘을 쓴다 */
+function iconUrl_() {
+  var v = String(config_()['아이콘주소'] || '').trim();
+  return /^https:\/\//.test(v) ? v : ICON_URL;
 }
 
 /** 앱에서 오는 모든 요청의 단일 입구 */
@@ -281,6 +292,13 @@ function saveThresholds_(p) {
 }
 
 /** 설정 시트의 한 줄을 고치거나, 없으면 만든다 */
+/** 없는 설정 줄만 채운다. 이미 있는 값은 건드리지 않는다 */
+function addCfg_(cs, key, value, desc) {
+  if (cfgRow_(cs, key)) return;
+  cs.appendRow([key, value, desc || '']);
+  cs.getRange(cs.getLastRow(), 3).setWrap(true);
+}
+
 function setCfg_(cs, key, value, desc) {
   var row = cfgRow_(cs, key);
   if (row) {
