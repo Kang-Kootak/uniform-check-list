@@ -6,12 +6,12 @@
 <title>교복 지도</title>
 
 <!-- 홈 화면에 추가했을 때 쓰는 아이콘과 이름 -->
-<link rel="apple-touch-icon" sizes="180x180" href="app-icon-180.png">
-<link rel="apple-touch-icon-precomposed" sizes="180x180" href="app-icon-180.png">
-<link rel="apple-touch-icon" sizes="192x192" href="app-icon-192.png">
-<link rel="icon" type="image/png" sizes="512x512" href="app-icon-512.png">
-<link rel="icon" type="image/png" sizes="192x192" href="app-icon-192.png">
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="/uniform-check-list/app-icon-180.png">
+<link rel="apple-touch-icon-precomposed" sizes="180x180" href="/uniform-check-list/app-icon-180.png">
+<link rel="apple-touch-icon" sizes="192x192" href="/uniform-check-list/app-icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/uniform-check-list/app-icon-512.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/uniform-check-list/app-icon-192.png">
+<link rel="manifest" href="/uniform-check-list/manifest.webmanifest">
 <meta name="apple-mobile-web-app-title" content="교복 지도">
 <meta name="theme-color" content="#1d4f7c">
 <meta name="robots" content="noindex">
@@ -24,7 +24,7 @@ body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px 20p
   background:#12324c;color:#eaf1f8;
   font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif}
 .card{width:100%;max-width:390px;text-align:center}
-img.icon{width:104px;height:104px;border-radius:25%;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.icon{display:block;width:104px;height:104px;margin:0 auto;border-radius:25%;box-shadow:0 10px 30px rgba(0,0,0,.35)}
 h1{font-size:20px;margin:16px 0 6px;letter-spacing:-.3px}
 p{margin:0;font-size:14px;line-height:1.7;color:#b9cbdd}
 .box{margin-top:20px;text-align:left;background:rgba(255,255,255,.07);
@@ -46,7 +46,26 @@ a.plain{display:inline-block;margin-top:12px;color:#9fc4e4;font-size:13px}
 </head>
 <body>
 <div class="card">
-  <img class="icon" src="app-icon-192.png" alt="교복 지도">
+  <svg class="icon" viewBox="0 0 512 512" role="img" aria-label="교복 지도">
+    <defs>
+        <linearGradient id="icbg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#2d6693"/><stop offset="1" stop-color="#11304c"/>
+        </linearGradient>
+      </defs>
+      <rect width="512" height="512" fill="url(#icbg)"/>
+      <!-- 셔츠 -->
+      <path d="M72 512 V290 q0-36 34-50 l80-34 l70 122 l70-122 l80 34 q34 14 34 50 v222 Z" fill="#ffffff"/>
+      <!-- 칼라 -->
+      <path d="M186 206 l70 122 l-54 32 l-70 -112 Z" fill="#dce6f1"/>
+      <path d="M326 206 l-70 122 l54 32 l70 -112 Z" fill="#dce6f1"/>
+      <!-- 넥타이 -->
+      <path d="M256 332 l36 30 l-18 40 h-36 l-18 -40 Z" fill="#ab3428"/>
+      <path d="M238 404 h36 l19 108 h-74 Z" fill="#ab3428"/>
+      <!-- 체크 배지 -->
+      <circle cx="388" cy="388" r="94" fill="#11304c"/>
+      <circle cx="388" cy="388" r="76" fill="#1f8a5f"/>
+      <path d="M352 389 l25 27 l48 -57" fill="none" stroke="#fff" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
   <h1>교복 지도</h1>
 
   <p id="msg" class="dots">앱을 여는 중입니다</p>
