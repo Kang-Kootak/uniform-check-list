@@ -92,9 +92,12 @@ function 초기설정() {
     '   ([교복 지도] → [② 앱 주소 보기]에서 다시 볼 수 있습니다.)');
 }
 
+function appUrl_() {
+  try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; }
+}
+
 function 앱주소보기() {
-  var url = '';
-  try { url = ScriptApp.getService().getUrl() || ''; } catch (e) {}
+  var url = appUrl_();
   var ui = SpreadsheetApp.getUi();
   if (!url) {
     ui.alert('아직 배포되지 않았습니다.\n\n오른쪽 위 [배포] → [새 배포] → 유형 [웹 앱]으로 먼저 배포해 주세요.');
@@ -123,11 +126,27 @@ function 기록초기화() {
 
 /* ─────────────────────────── 웹 앱 ─────────────────────────── */
 
-function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index')
+function doGet(e) {
+  var html = HtmlService.createHtmlOutputFromFile('Index').getContent();
+  html = html.replace('/*__SEED__*/', 'SEED=' + JSON.stringify(seed_(e)) + ';');
+  return HtmlService.createHtmlOutput(html)
     .setTitle('교복 지도 수첩')
     .setFaviconUrl(iconUrl_())
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+}
+
+/**
+ * 주소에 실어 보낸 PIN·기록자 이름을 읽는다.
+ *   …/exec?pin=2024&by=이도현
+ * 사파리는 구글 앱 스크립트 화면의 저장물을 오래 두지 않기 때문에,
+ * 휴대폰에 저장해 둔 값이 지워져도 주소만 있으면 다시 입력하지 않아도 됩니다.
+ */
+function seed_(e) {
+  var p = (e && e.parameter) || {};
+  var clean = function (v, n) {
+    return String(v == null ? '' : v).replace(/[<>]/g, '').trim().slice(0, n);
+  };
+  return { pin: clean(p.pin, 20), by: clean(p.by || p.name, 40) };
 }
 
 /** 설정 시트에 적어둔 아이콘 주소가 있으면 그것을, 없으면 기본 아이콘을 쓴다 */
@@ -224,6 +243,8 @@ function boot_(role) {
     school: String(cfg['학교명'] || '').trim(),
     pinSet: !!(String(cfg['기록PIN'] || '').trim() || String(cfg['관리PIN'] || '').trim()),
     sheetUrl: role === 'admin' ? ss.getUrl() : '',
+    appUrl: role === 'admin' ? appUrl_() : '',
+    pins: role === 'admin' ? { rec: String(cfg['기록PIN'] || '').trim(), adm: String(cfg['관리PIN'] || '').trim() } : null,
     logLimit: LOG_LIMIT,
     rev: rev_()
   };

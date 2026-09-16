@@ -552,6 +552,25 @@ a.btn{text-decoration:none}
       </div>
 
       <div class="card pad" data-admin hidden style="display:flex;flex-direction:column;gap:10px">
+        <div class="sect-h" style="margin-bottom:2px"><h2>선도부원 링크 만들기</h2></div>
+        <p class="note">이름과 PIN이 들어간 <b>각자의 주소</b>를 만듭니다. 이 주소를 홈 화면에 추가하면 휴대폰이 저장물을 지워도 <b>PIN·이름을 다시 넣을 일이 없습니다.</b></p>
+        <div>
+          <label class="fl" for="lkName">기록자 이름</label>
+          <input class="inp" id="lkName" placeholder="예: 2학년 선도부 이도현" maxlength="40" autocomplete="off">
+        </div>
+        <div>
+          <label class="fl">권한</label>
+          <div class="chips" id="lkRole"></div>
+        </div>
+        <div>
+          <label class="fl" for="lkOut">만들어진 주소</label>
+          <input class="inp" id="lkOut" readonly spellcheck="false" placeholder="이름을 넣으면 주소가 만들어집니다">
+        </div>
+        <div id="lkNote" class="note"></div>
+        <button class="btn wide" id="lkCopy" type="button">주소 복사</button>
+      </div>
+
+      <div class="card pad" data-admin hidden style="display:flex;flex-direction:column;gap:10px">
         <div class="sect-h" style="margin-bottom:2px"><h2>선도위원회 기준</h2></div>
         <p class="note">학교 규정에 맞춰 고치시면 앱 전체에 바로 반영됩니다.</p>
         <div style="display:flex;gap:8px">
@@ -607,7 +626,7 @@ var POLL_MS=20000, IDLE_MS=15*60*1000;
 /* ============ 상태 ============ */
 var REASON="교복 미착용";   // 적발 사유는 이 한 가지로 통일
 var students=new Map(), logs=[], exempts=[], adjusts=[], histCache={};
-var role=null, pinSet=true, sheetUrl="", logLimit=1000, rev=0;
+var role=null, pinSet=true, sheetUrl="", appUrl="", PINS=null, logLimit=1000, rev=0;
 var tab="check", period="all", klassFilter="all", shown=40;
 var busy=new Set(), inflight=0, lastAct=Date.now(), syncedAt=null, booted=false;
 
@@ -618,8 +637,18 @@ function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){
 function rid(){ return Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-4); }
 function lsGet(k,d){ try{ var v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
-function me(){ return lsGet(LS_ME,"")||""; }
-function getPin(){ return lsGet(LS_PIN,"")||""; }
+/* 주소에 실어 보낸 값 — 서버가 doGet 에서 채워 넣습니다 (…/exec?pin=…&by=…) */
+var SEED = {pin:"", by:""};
+/*__SEED__*/
+/* 휴대폰에 저장된 값이 먼저, 없으면 주소로 받은 값.
+   사파리가 저장물을 지워도 주소만 있으면 다시 입력할 필요가 없습니다. */
+function me(){ return lsGet(LS_ME,"") || SEED.by || ""; }
+function getPin(){ return lsGet(LS_PIN,"") || SEED.pin || ""; }
+/** 주소로 받은 값을 이 휴대폰에도 한 번 저장해 둔다 (지워지면 다시 주소에서 읽습니다) */
+function keepSeed(){
+  if(SEED.pin && !lsGet(LS_PIN,"")) lsSet(LS_PIN, SEED.pin);
+  if(SEED.by  && !lsGet(LS_ME,""))  lsSet(LS_ME,  SEED.by);
+}
 
 function chosung(s){
   var out="";
@@ -851,6 +880,7 @@ function errMsg(e){
 /* ============ 부팅 / 동기화 ============ */
 function applyBoot(d){
   role=d.role; pinSet=d.pinSet; sheetUrl=d.sheetUrl||""; logLimit=d.logLimit||1000; rev=d.rev||0;
+  appUrl=d.appUrl||""; PINS=d.pins||null;
   students=new Map();
   (d.students||[]).forEach(function(s){ students.set(s.no, s); });
   logs=d.logs||[];
@@ -864,6 +894,7 @@ function applyBoot(d){
   lsSet(LS_CACHE, {students:d.students||[], logs:logs.slice(0,200), exempts:exempts, adjusts:adjusts.slice(0,50), th:TH, role:role, at:syncedAt});
   applyRole();
   render();
+  buildLink();
   if(!me()) askName();
 }
 function loadCache(){
@@ -1530,6 +1561,42 @@ function abSummary(pl){
     "<br>적발 이력은 지우지 않고 차이만 조정값으로 남습니다.";
 }
 
+/* ============ 선도부원 링크 만들기 ============ */
+var lkRoleSel = "rec";     // rec = 기록용, adm = 관리용
+function renderLkRole(){
+  var box = $("lkRole"); if(!box) return;
+  box.innerHTML = [["rec","기록용 (선도부원)"],["adm","관리용 (선생님)"]].map(function(r){
+    return '<button class="chip" type="button" data-act="lkrole" data-v="'+r[0]+'" aria-pressed="'+(lkRoleSel===r[0])+'">'+r[1]+'</button>';
+  }).join("");
+}
+function pickLkRole(v){ lkRoleSel = v; renderLkRole(); buildLink(); }
+function buildLink(){
+  var out = $("lkOut"), note = $("lkNote");
+  if(!out || !note) return;
+  var name = ($("lkName") ? $("lkName").value : "").trim();
+  var pin = (PINS && (lkRoleSel==="adm" ? PINS.adm : PINS.rec)) || "";
+  if(!appUrl){ out.value=""; note.textContent = "앱 주소를 아직 받지 못했습니다. 잠시 뒤 다시 열어보세요."; return; }
+  if(!name){ out.value=""; note.textContent = "이름을 넣으면 주소가 만들어집니다."; return; }
+  if(!pin){ out.value=""; note.innerHTML = '<span style="color:var(--crit)">'+(lkRoleSel==="adm"?"관리":"기록")+' PIN이 정해져 있지 않습니다. 설정 시트에서 먼저 정해주세요.</span>'; return; }
+  out.value = appUrl + "?pin=" + encodeURIComponent(pin) + "&by=" + encodeURIComponent(name);
+  note.innerHTML = '이 주소를 <b>'+esc(baseName(name))+'</b> 님에게 보내고, 휴대폰에서 열어 <b>홈 화면에 추가</b>하라고 안내하세요. '+
+    (lkRoleSel==="adm" ? '<span style="color:var(--warn)">관리용은 명단·기록을 고칠 수 있으니 선생님만 쓰세요.</span>' : '주소에 PIN이 들어 있으니 다른 사람에게 흘러가지 않게 해주세요.');
+}
+function copyLink(){
+  var out = $("lkOut");
+  if(!out || !out.value){ toast("먼저 이름을 넣어주세요."); return; }
+  out.focus(); out.setSelectionRange(0, out.value.length);
+  var done = false;
+  try { done = document.execCommand("copy"); } catch(e){}
+  if(done){ toast("주소를 복사했습니다."); return; }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(out.value).then(function(){ toast("주소를 복사했습니다."); },
+      function(){ toast("길게 눌러 복사해 주세요."); });
+    return;
+  }
+  toast("길게 눌러 복사해 주세요.");
+}
+
 var ADJ_NONE_NOTE = "횟수를 맞추면 학번·이름·날짜·사유가 여기와 스프레드시트에 함께 남습니다.";
 var ADJ_OLD_NOTE  = "지난 기록은 스프레드시트의 조정 시트에서 확인하세요.";
 var ADJ_MORE_NOTE = '최근 한 달 안의 5건까지만 보여드립니다. 나머지는 스프레드시트의 <b>조정</b> 시트에서 확인하세요.';
@@ -1726,6 +1793,7 @@ document.addEventListener("click", function(ev){
   if(act==="theme"){ setTheme(t.getAttribute("data-v")); return; }
   if(act==="adreason"){ pickAdReason(t.getAttribute("data-v")); return; }
   if(act==="abreason"){ pickAbReason(t.getAttribute("data-v")); return; }
+  if(act==="lkrole"){ pickLkRole(t.getAttribute("data-v")); return; }
   if(act==="adpick"){ pickAdjust(t.getAttribute("data-sid")); return; }
   if(act==="expick"){ pickExempt(t.getAttribute("data-sid")); return; }
   if(act==="exdel"){
@@ -1860,6 +1928,9 @@ $("abGo").addEventListener("click", function(){
   });
 });
 
+$("lkName").addEventListener("input", buildLink);
+$("lkCopy").addEventListener("click", copyLink);
+
 $("thWarn").addEventListener("input", thHint);
 $("thRefer").addEventListener("input", thHint);
 $("thGo").addEventListener("click", function(){
@@ -1915,11 +1986,13 @@ document.addEventListener("visibilitychange", function(){
 });
 
 /* ============ 시작 ============ */
+keepSeed();
 applyTheme();
 loadCache();
 resetExForm();
 resetAdForm();
 renderAbReasons();
+renderLkRole();
 render();
 renderNow();
 setInterval(renderNow, 1000);
