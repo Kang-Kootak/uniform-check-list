@@ -552,22 +552,33 @@ a.btn{text-decoration:none}
       </div>
 
       <div class="card pad" data-admin hidden style="display:flex;flex-direction:column;gap:10px">
-        <div class="sect-h" style="margin-bottom:2px"><h2>선도부원 링크 만들기</h2></div>
-        <p class="note">이름과 PIN이 들어간 <b>각자의 주소</b>를 만듭니다. 이 주소를 홈 화면에 추가하면 휴대폰이 저장물을 지워도 <b>PIN·이름을 다시 넣을 일이 없습니다.</b></p>
+        <div class="sect-h" style="margin-bottom:2px"><h2>접속 코드 만들기</h2></div>
+        <p class="note">사람마다 <b>자기 코드가 들어간 주소</b>를 만들어 줍니다. 그 주소를 홈 화면에 추가하면 <b>PIN도 이름도 다시 묻지 않습니다.</b> 휴대폰을 잃어버리거나 선도부가 바뀌면 그 코드만 회수하면 됩니다.</p>
         <div>
-          <label class="fl" for="lkName">기록자 이름</label>
-          <input class="inp" id="lkName" placeholder="예: 2학년 선도부 이도현" maxlength="40" autocomplete="off">
+          <label class="fl" for="cdName">이름</label>
+          <input class="inp" id="cdName" placeholder="예: 2학년 선도부 이도현" maxlength="40" autocomplete="off">
         </div>
         <div>
           <label class="fl">권한</label>
-          <div class="chips" id="lkRole"></div>
+          <div class="chips" id="cdRole"></div>
         </div>
-        <div>
-          <label class="fl" for="lkOut">만들어진 주소</label>
-          <input class="inp" id="lkOut" readonly spellcheck="false" placeholder="이름을 넣으면 주소가 만들어집니다">
+        <button class="btn primary wide" id="cdGo" type="button">코드 만들기</button>
+        <div id="cdOutWrap" hidden>
+          <label class="fl" for="cdOut">나눠줄 주소</label>
+          <input class="inp" id="cdOut" readonly spellcheck="false">
+          <div class="btnrow" style="margin-top:8px">
+            <button class="btn primary" id="cdCopy" type="button">주소 복사</button>
+            <button class="btn" id="cdClear" type="button">닫기</button>
+          </div>
+          <p class="note" id="cdNote" style="margin-top:8px"></p>
         </div>
-        <div id="lkNote" class="note"></div>
-        <button class="btn wide" id="lkCopy" type="button">주소 복사</button>
+      </div>
+
+      <div class="card" data-admin hidden>
+        <div class="pad" style="padding-bottom:0">
+          <div class="sect-h" style="margin-bottom:2px"><h2>나눠준 코드</h2><span class="sub" id="cdSub"></span></div>
+        </div>
+        <ul class="log" id="cdList"></ul>
       </div>
 
       <div class="card pad" data-admin hidden style="display:flex;flex-direction:column;gap:10px">
@@ -620,13 +631,13 @@ a.btn{text-decoration:none}
 /* ============ 상수 ============ */
 var WD = ["일","월","화","수","목","금","토"];
 var CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
-var LS_CACHE="gyobok.cache.v2", LS_ME="gyobok.me", LS_PIN="gyobok.pin", LS_THEME="gyobok.theme";
+var LS_CACHE="gyobok.cache.v2", LS_ME="gyobok.me", LS_PIN="gyobok.pin", LS_THEME="gyobok.theme", LS_CODE="gyobok.code";
 var POLL_MS=20000, IDLE_MS=15*60*1000;
 
 /* ============ 상태 ============ */
 var REASON="교복 미착용";   // 적발 사유는 이 한 가지로 통일
 var students=new Map(), logs=[], exempts=[], adjusts=[], histCache={};
-var role=null, pinSet=true, sheetUrl="", appUrl="", PINS=null, logLimit=1000, rev=0;
+var role=null, pinSet=true, sheetUrl="", appUrl="", PINS=null, codes=[], logLimit=1000, rev=0;
 var tab="check", period="all", klassFilter="all", shown=40;
 var busy=new Set(), inflight=0, lastAct=Date.now(), syncedAt=null, booted=false;
 
@@ -638,16 +649,18 @@ function rid(){ return Math.random().toString(36).slice(2,9)+Date.now().toString
 function lsGet(k,d){ try{ var v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
 /* 주소에 실어 보낸 값 — 서버가 doGet 에서 채워 넣습니다 (…/exec?pin=…&by=…) */
-var SEED = {pin:"", by:""};
+var SEED = {pin:"", by:"", code:""};
 /*__SEED__*/
 /* 휴대폰에 저장된 값이 먼저, 없으면 주소로 받은 값.
    사파리가 저장물을 지워도 주소만 있으면 다시 입력할 필요가 없습니다. */
 function me(){ return lsGet(LS_ME,"") || SEED.by || ""; }
 function getPin(){ return lsGet(LS_PIN,"") || SEED.pin || ""; }
+function getCode(){ return lsGet(LS_CODE,"") || SEED.code || ""; }
 /** 주소로 받은 값을 이 휴대폰에도 한 번 저장해 둔다 (지워지면 다시 주소에서 읽습니다) */
 function keepSeed(){
-  if(SEED.pin && !lsGet(LS_PIN,"")) lsSet(LS_PIN, SEED.pin);
-  if(SEED.by  && !lsGet(LS_ME,""))  lsSet(LS_ME,  SEED.by);
+  if(SEED.pin  && !lsGet(LS_PIN,""))  lsSet(LS_PIN,  SEED.pin);
+  if(SEED.by   && !lsGet(LS_ME,""))   lsSet(LS_ME,   SEED.by);
+  if(SEED.code && !lsGet(LS_CODE,"")) lsSet(LS_CODE, SEED.code);
 }
 
 function chosung(s){
@@ -847,7 +860,7 @@ function hasBackend(){ return !!(window.google && window.google.script && window
 function call(op, extra){
   return new Promise(function(res, rej){
     if(!hasBackend()){ rej({err:"NET", message:"앱 주소로 접속해 주세요."}); return; }
-    var p={op:op, pin:getPin()};
+    var p={op:op, pin:getPin(), code:getCode()};
     if(extra) for(var k in extra) if(Object.prototype.hasOwnProperty.call(extra,k)) p[k]=extra[k];
     setBusy(1);
     google.script.run
@@ -880,7 +893,9 @@ function errMsg(e){
 /* ============ 부팅 / 동기화 ============ */
 function applyBoot(d){
   role=d.role; pinSet=d.pinSet; sheetUrl=d.sheetUrl||""; logLimit=d.logLimit||1000; rev=d.rev||0;
-  appUrl=d.appUrl||""; PINS=d.pins||null;
+  appUrl=d.appUrl||""; PINS=d.pins||null; codes=d.codes||[];
+  // 코드로 들어왔으면 이름은 시트에 적힌 것을 쓴다 (휴대폰이 잊어버려도 남습니다)
+  if(d.me){ SEED.by = d.me; if(!lsGet(LS_ME,"")) lsSet(LS_ME, d.me); }
   students=new Map();
   (d.students||[]).forEach(function(s){ students.set(s.no, s); });
   logs=d.logs||[];
@@ -894,7 +909,7 @@ function applyBoot(d){
   lsSet(LS_CACHE, {students:d.students||[], logs:logs.slice(0,200), exempts:exempts, adjusts:adjusts.slice(0,50), th:TH, role:role, at:syncedAt});
   applyRole();
   render();
-  buildLink();
+  renderCodes();
   if(!me()) askName();
 }
 function loadCache(){
@@ -1561,30 +1576,26 @@ function abSummary(pl){
     "<br>적발 이력은 지우지 않고 차이만 조정값으로 남습니다.";
 }
 
-/* ============ 선도부원 링크 만들기 ============ */
-var lkRoleSel = "rec";     // rec = 기록용, adm = 관리용
-function renderLkRole(){
-  var box = $("lkRole"); if(!box) return;
-  box.innerHTML = [["rec","기록용 (선도부원)"],["adm","관리용 (선생님)"]].map(function(r){
-    return '<button class="chip" type="button" data-act="lkrole" data-v="'+r[0]+'" aria-pressed="'+(lkRoleSel===r[0])+'">'+r[1]+'</button>';
+/* ============ 접속 코드 ============ */
+var cdRoleSel = "기록";
+function renderCdRole(){
+  var box = $("cdRole"); if(!box) return;
+  box.innerHTML = [["기록","기록용 (선도부원)"],["관리","관리용 (선생님)"]].map(function(r){
+    return '<button class="chip" type="button" data-act="cdrole" data-v="'+r[0]+'" aria-pressed="'+(cdRoleSel===r[0])+'">'+r[1]+'</button>';
   }).join("");
 }
-function pickLkRole(v){ lkRoleSel = v; renderLkRole(); buildLink(); }
-function buildLink(){
-  var out = $("lkOut"), note = $("lkNote");
-  if(!out || !note) return;
-  var name = ($("lkName") ? $("lkName").value : "").trim();
-  var pin = (PINS && (lkRoleSel==="adm" ? PINS.adm : PINS.rec)) || "";
-  if(!appUrl){ out.value=""; note.textContent = "앱 주소를 아직 받지 못했습니다. 잠시 뒤 다시 열어보세요."; return; }
-  if(!name){ out.value=""; note.textContent = "이름을 넣으면 주소가 만들어집니다."; return; }
-  if(!pin){ out.value=""; note.innerHTML = '<span style="color:var(--crit)">'+(lkRoleSel==="adm"?"관리":"기록")+' PIN이 정해져 있지 않습니다. 설정 시트에서 먼저 정해주세요.</span>'; return; }
-  out.value = appUrl + "?pin=" + encodeURIComponent(pin) + "&by=" + encodeURIComponent(name);
-  note.innerHTML = '이 주소를 <b>'+esc(baseName(name))+'</b> 님에게 보내고, 휴대폰에서 열어 <b>홈 화면에 추가</b>하라고 안내하세요. '+
-    (lkRoleSel==="adm" ? '<span style="color:var(--warn)">관리용은 명단·기록을 고칠 수 있으니 선생님만 쓰세요.</span>' : '주소에 PIN이 들어 있으니 다른 사람에게 흘러가지 않게 해주세요.');
+function pickCdRole(v){ cdRoleSel = v; renderCdRole(); }
+function codeUrl(code){ return appUrl ? appUrl + "?c=" + encodeURIComponent(code) : ""; }
+function showCodeUrl(code, name, role){
+  var wrap = $("cdOutWrap"); if(!wrap) return;
+  wrap.hidden = false;
+  $("cdOut").value = codeUrl(code);
+  $("cdNote").innerHTML = '<b>'+esc(baseName(name))+'</b> 님에게 이 주소를 보내고, 휴대폰에서 열어 <b>홈 화면에 추가</b>하라고 안내하세요.'+
+    (role==="관리" ? ' <span style="color:var(--warn)">관리용은 명단·기록을 고칠 수 있으니 선생님만 쓰세요.</span>' : '');
 }
-function copyLink(){
-  var out = $("lkOut");
-  if(!out || !out.value){ toast("먼저 이름을 넣어주세요."); return; }
+function copyCodeUrl(){
+  var out = $("cdOut");
+  if(!out || !out.value){ toast("먼저 코드를 만들어 주세요."); return; }
   out.focus(); out.setSelectionRange(0, out.value.length);
   var done = false;
   try { done = document.execCommand("copy"); } catch(e){}
@@ -1595,6 +1606,24 @@ function copyLink(){
     return;
   }
   toast("길게 눌러 복사해 주세요.");
+}
+function renderCodes(){
+  var box = $("cdList"); if(!box) return;
+  $("cdSub").textContent = codes.length ? codes.length+"개" : "";
+  if(!codes.length){
+    box.innerHTML = '<li><div class="empty"><strong>아직 나눠준 코드가 없습니다</strong>위에서 이름을 넣고 코드를 만들어 나눠주세요.</div></li>';
+    return;
+  }
+  box.innerHTML = codes.map(function(c){
+    return '<li>'+
+      '<div class="body"><b>'+esc(baseName(c.name))+'</b>'+
+        '<span class="tagx '+(c.role==="관리"?"soon":"")+'">'+esc(c.role)+'</span>'+
+        '<div class="rsn">'+esc(c.code)+' · '+(c.last ? "마지막 사용 "+esc(fmtWhen(c.last)) : "아직 안 씀")+'</div>'+
+      '</div>'+
+      '<button class="undo" type="button" data-act="cdcopy" data-code="'+esc(c.code)+'" data-name="'+esc(c.name)+'" data-role="'+esc(c.role)+'">주소</button>'+
+      '<button class="undo" type="button" data-act="cddel" data-code="'+esc(c.code)+'" data-name="'+esc(c.name)+'">회수</button>'+
+    '</li>';
+  }).join("");
 }
 
 var ADJ_NONE_NOTE = "횟수를 맞추면 학번·이름·날짜·사유가 여기와 스프레드시트에 함께 남습니다.";
@@ -1793,7 +1822,24 @@ document.addEventListener("click", function(ev){
   if(act==="theme"){ setTheme(t.getAttribute("data-v")); return; }
   if(act==="adreason"){ pickAdReason(t.getAttribute("data-v")); return; }
   if(act==="abreason"){ pickAbReason(t.getAttribute("data-v")); return; }
-  if(act==="lkrole"){ pickLkRole(t.getAttribute("data-v")); return; }
+  if(act==="cdrole"){ pickCdRole(t.getAttribute("data-v")); return; }
+  if(act==="cdcopy"){
+    showCodeUrl(t.getAttribute("data-code"), t.getAttribute("data-name"), t.getAttribute("data-role"));
+    copyCodeUrl(); return;
+  }
+  if(act==="cddel"){
+    var dc=t.getAttribute("data-code"), dn=t.getAttribute("data-name");
+    askConfirm("코드 회수",
+      "<b>"+esc(baseName(dn))+"</b> 님의 코드를 회수합니다.<br>그 휴대폰은 다음에 열 때부터 들어올 수 없습니다. 이미 기록한 것은 그대로 남습니다.",
+      "회수", true).then(function(yes){
+        if(!yes) return;
+        call("code_del", {code2:dc}).then(function(){
+          toast(baseName(dn)+" 코드를 회수했습니다.");
+          return refresh(true);
+        }, function(e){ toast(errMsg(e)); });
+      });
+    return;
+  }
   if(act==="adpick"){ pickAdjust(t.getAttribute("data-sid")); return; }
   if(act==="expick"){ pickExempt(t.getAttribute("data-sid")); return; }
   if(act==="exdel"){
@@ -1928,8 +1974,18 @@ $("abGo").addEventListener("click", function(){
   });
 });
 
-$("lkName").addEventListener("input", buildLink);
-$("lkCopy").addEventListener("click", copyLink);
+$("cdCopy").addEventListener("click", copyCodeUrl);
+$("cdClear").addEventListener("click", function(){ $("cdOutWrap").hidden = true; $("cdName").value=""; });
+$("cdGo").addEventListener("click", function(){
+  var name = $("cdName").value.trim();
+  if(!name){ toast("이름을 입력해 주세요."); $("cdName").focus(); return; }
+  $("cdGo").disabled = true;
+  call("code_add", {name:name, role:cdRoleSel, by:me()}).then(function(d){
+    showCodeUrl(d.code, d.name, d.role);
+    toast(baseName(d.name)+" 코드를 만들었습니다.");
+    return refresh(true);
+  }, function(e){ toast(errMsg(e)); }).then(function(){ $("cdGo").disabled = false; });
+});
 
 $("thWarn").addEventListener("input", thHint);
 $("thRefer").addEventListener("input", thHint);
@@ -1992,7 +2048,8 @@ loadCache();
 resetExForm();
 resetAdForm();
 renderAbReasons();
-renderLkRole();
+renderCdRole();
+renderCodes();
 render();
 renderNow();
 setInterval(renderNow, 1000);

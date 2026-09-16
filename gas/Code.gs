@@ -6,7 +6,8 @@
  * 자세한 순서는 저장소의 gas/설치_방법.md 참고.
  */
 
-var SH_R = '명단', SH_L = '기록', SH_C = '설정', SH_E = '면제', SH_J = '조정';
+var SH_R = '명단', SH_L = '기록', SH_C = '설정', SH_E = '면제', SH_J = '조정', SH_D = '코드';
+var HDR_D = ['코드', '이름', '권한', '발급일시', '마지막사용', '발급자'];
 var HDR_R = ['학번', '이름', '학년', '반', '번호', '누적횟수', '최근적발', '조정'];
 var HDR_L = ['기록ID', '일시', '학번', '이름', '학년', '반', '사유', '메모', '기록자'];
 var HDR_E = ['면제ID', '학번', '이름', '사유', '시작일', '종료일', '등록자', '등록일시'];
@@ -60,6 +61,10 @@ function 초기설정() {
   var js = ensureAdjustSheet_(ss);
   js.getRange(1, 1, 1, HDR_J.length).setFontWeight('bold').setBackground('#e2ecf6');
   js.setColumnWidth(1, 90); js.setColumnWidth(2, 150); js.setColumnWidth(7, 240);
+
+  var ds = ensureCodeSheet_(ss);
+  ds.getRange(1, 1, 1, HDR_D.length).setFontWeight('bold').setBackground('#e2ecf6');
+  ds.setColumnWidth(1, 100); ds.setColumnWidth(2, 160); ds.setColumnWidth(4, 150); ds.setColumnWidth(5, 150);
 
   var cs = ss.getSheetByName(SH_C) || ss.insertSheet(SH_C);
   if (cs.getLastRow() === 0) {
@@ -146,7 +151,7 @@ function seed_(e) {
   var clean = function (v, n) {
     return String(v == null ? '' : v).replace(/[<>]/g, '').trim().slice(0, n);
   };
-  return { pin: clean(p.pin, 20), by: clean(p.by || p.name, 40) };
+  return { pin: clean(p.pin, 20), by: clean(p.by || p.name, 40), code: clean(p.c || p.code, 20) };
 }
 
 /** 설정 시트에 적어둔 아이콘 주소가 있으면 그것을, 없으면 기본 아이콘을 쓴다 */
@@ -159,12 +164,15 @@ function iconUrl_() {
 function api(p) {
   p = p || {};
   try {
-    var role = auth_(p.pin);
-    if (!role) return { ok: false, err: 'PIN' };
+    var who = identify_(p);
+    if (!who) return { ok: false, err: 'PIN' };
+    var role = who.role;
     var admin = (role === 'admin');
+    // 코드로 들어왔으면 기록자 이름은 시트에 적힌 이름을 쓴다 (휴대폰이 잊어버려도 남는다)
+    if (who.name && !String(p.by || '').trim()) p.by = who.name;
     switch (p.op) {
       case 'rev':     return ok_({ rev: rev_() });
-      case 'boot':    return ok_(boot_(role));
+      case 'boot':    return ok_(boot_(role, who));
       case 'history': return ok_({ no: normNo_(p.no), items: history_(normNo_(p.no)) });
       case 'add':     return ok_(addRecord_(p));
       case 'undo':    return admin ? ok_(undoRecord_(p)) : deny_();
@@ -176,6 +184,8 @@ function api(p) {
       case 'th_set':  return admin ? ok_(saveThresholds_(p)) : deny_();
       case 'adjust':  return admin ? ok_(adjustCount_(p)) : deny_();
       case 'adjust_bulk': return admin ? ok_(adjustBulk_(p)) : deny_();
+      case 'code_add': return admin ? ok_(codeAdd_(p)) : deny_();
+      case 'code_del': return admin ? ok_(codeDel_(String(p.code2 || ''))) : deny_();
       case 'reset':   return admin ? ok_(resetCounts_()) : deny_();
       case 'wipe':    return admin ? ok_(wipeRoster_()) : deny_();
       case 'backup':  return admin ? ok_({ id: 백업사본() }) : deny_();
@@ -191,6 +201,118 @@ function api(p) {
 
 function ok_(data) { return { ok: true, data: data }; }
 function deny_() { return { ok: false, err: 'ROLE', message: '관리 PIN이 필요한 기능입니다.' }; }
+
+/**
+ * 접속 코드(기기 코드) 규칙
+ *  · 주소에 ?c=코드 로 들어오면 그 코드의 이름·권한으로 들어옵니다.
+ *  · 코드가 없거나 회수됐으면 PIN 으로 넘어갑니다.
+ */
+function identify_(p) {
+  var code = String(p.code || '').trim();
+  if (code) {
+    var rec = findCode_(code);
+    if (rec) return { role: rec.role === '관리' ? 'admin' : 'record', name: rec.name, code: rec.code };
+  }
+  var role = auth_(p.pin);
+  return role ? { role: role, name: '', code: '' } : null;
+}
+
+/** 코드 시트는 나중에 생긴 기능이라, 없으면 그때 만든다 */
+function ensureCodeSheet_(ss) {
+  var sh = ss.getSheetByName(SH_D);
+  if (!sh) sh = ss.insertSheet(SH_D);
+  sh.getRange(1, 1, 1, HDR_D.length).setValues([HDR_D]);
+  sh.setFrozenRows(1);
+  sh.getRange(2, 1, Math.max(sh.getMaxRows() - 1, 1), 1).setNumberFormat('@');   // 코드는 글자로
+  return sh;
+}
+
+function readCodes_() {
+  var ds;
+  try { ds = ensureCodeSheet_(ss_()); } catch (e) { return []; }
+  var last = ds.getLastRow();
+  if (last < 2) return [];
+  var vals = ds.getRange(2, 1, last - 1, HDR_D.length).getValues();
+  var out = [];
+  for (var i = 0; i < vals.length; i++) {
+    var c = String(vals[i][0] || '').trim();
+    if (!c) continue;
+    out.push({
+      code: c, name: String(vals[i][1] || '').trim(),
+      role: String(vals[i][2] || '').trim() || '기록',
+      at: iso_(vals[i][3]), last: iso_(vals[i][4]), by: String(vals[i][5] || '')
+    });
+  }
+  out.sort(function (a, b) { return (a.at || '') < (b.at || '') ? 1 : -1; });
+  return out;
+}
+
+function findCode_(code) {
+  var list = readCodes_();
+  for (var i = 0; i < list.length; i++) if (list[i].code === code) return list[i];
+  return null;
+}
+
+/** 이 코드를 마지막으로 쓴 시각을 남긴다 (앱을 열 때 한 번) */
+function touchCode_(code) {
+  if (!code) return;
+  try {
+    var ds = ensureCodeSheet_(ss_());
+    var last = ds.getLastRow();
+    if (last < 2) return;
+    var vals = ds.getRange(2, 1, last - 1, 1).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      if (String(vals[i][0] || '').trim() === code) { ds.getRange(i + 2, 5).setValue(new Date()); return; }
+    }
+  } catch (e) { /* 기록용이라 실패해도 그냥 넘어갑니다 */ }
+}
+
+/** 헷갈리는 글자(0 O 1 l I)는 빼고 만든다 */
+function newCode_() {
+  var abc = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  var out = '';
+  for (var i = 0; i < 8; i++) out += abc.charAt(Math.floor(Math.random() * abc.length));
+  return out;
+}
+
+function codeAdd_(p) {
+  var name = String(p.name || '').trim().slice(0, 40);
+  var role = String(p.role || '').trim() === '관리' ? '관리' : '기록';
+  if (!name) throw new Error('이름을 입력해 주세요.');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('잠시 후 다시 시도해 주세요.');
+  try {
+    var ds = ensureCodeSheet_(ss_());
+    var code = newCode_();
+    for (var i = 0; i < 5 && findCode_(code); i++) code = newCode_();
+    ds.appendRow([code, name, role, new Date(), '', String(p.by || '').slice(0, 40)]);
+    bumpRev_();
+    return { code: code, name: name, role: role };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function codeDel_(code) {
+  code = String(code || '').trim();
+  if (!code) throw new Error('회수할 코드를 찾지 못했습니다.');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('잠시 후 다시 시도해 주세요.');
+  try {
+    var ds = ensureCodeSheet_(ss_());
+    var last = ds.getLastRow();
+    if (last >= 2) {
+      var vals = ds.getRange(2, 1, last - 1, 1).getValues();
+      for (var i = vals.length - 1; i >= 0; i--) {
+        if (String(vals[i][0] || '').trim() === code) { ds.deleteRow(i + 2); break; }
+      }
+    }
+    bumpRev_();
+    return { code: code };
+  } finally {
+    lock.releaseLock();
+  }
+}
 
 /**
  * PIN 규칙
@@ -212,7 +334,9 @@ function auth_(pin) {
 
 /* ─────────────────────────── 읽기 ─────────────────────────── */
 
-function boot_(role) {
+function boot_(role, who) {
+  who = who || { name: '', code: '' };
+  if (who.code) touchCode_(who.code);
   var ss = ss_();
   var rs = sheet_(ss, SH_R);
   var students = [];
@@ -235,6 +359,7 @@ function boot_(role) {
   var cfg = config_();
   return {
     role: role,
+    me: who.name || '',
     students: students,
     logs: recentLogs_(LOG_LIMIT),
     exempts: readExempts_(),
@@ -245,6 +370,7 @@ function boot_(role) {
     sheetUrl: role === 'admin' ? ss.getUrl() : '',
     appUrl: role === 'admin' ? appUrl_() : '',
     pins: role === 'admin' ? { rec: String(cfg['기록PIN'] || '').trim(), adm: String(cfg['관리PIN'] || '').trim() } : null,
+    codes: role === 'admin' ? readCodes_() : [],
     logLimit: LOG_LIMIT,
     rev: rev_()
   };
