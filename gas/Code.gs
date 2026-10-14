@@ -82,6 +82,9 @@ function 초기설정() {
   addCfg_(cs, '경고기준', DEF_WARN, '누적 적발이 이 횟수에 이르면 앱에 회부 경고가 뜹니다. 앱의 [명단 → 선도위원회 기준]에서도 고칠 수 있습니다.');
   addCfg_(cs, '회부기준', DEF_REFER, '누적 적발이 이 횟수에 도달하면 학생선도위원회 회부 대상으로 표시합니다.');
   addCfg_(cs, '아이콘주소', '', '홈 화면·브라우저 탭에 쓰는 앱 아이콘 그림 주소(https). 비워두면 기본 교복 아이콘을 씁니다.');
+  addCfg_(cs, '혼자쓰기', '', '"예" 로 적으면 PIN을 묻지 않고 바로 들어오며, 기록자는 아래 [고정기록자] 이름으로 남습니다. 여럿이 쓰실 때는 이 칸을 비우세요.');
+  addCfg_(cs, '고정기록자', '', '혼자쓰기일 때 기록에 남길 이름 (예: 강구탁). 비워두면 앱이 이름을 물어봅니다.');
+  addCfg_(cs, '화면밝기', '', '"밝게" 로 적으면 밝은 화면으로 고정하고, 내 설정에서 밝기 고르는 칸을 숨깁니다. 비워두면 각자 고릅니다.');
   ss.setSpreadsheetTimeZone('Asia/Seoul');
   bumpRev_();
   cache_().remove('cfg');
@@ -154,6 +157,20 @@ function seed_(e) {
   return { pin: clean(p.pin, 20), by: clean(p.by || p.name, 40), code: clean(p.c || p.code, 20) };
 }
 
+/* ── 올해만 쓰는 설정 (내년에 설정 시트의 칸을 비우면 원래대로 돌아갑니다) ── */
+
+/** 혼자 쓰기 — PIN을 묻지 않고 바로 들어오며, 기록자는 '고정기록자' 이름으로 남습니다 */
+function solo_(cfg) {
+  return /^(예|y|yes|on|true|1|사용)$/i.test(String((cfg || config_())['혼자쓰기'] || '').trim());
+}
+function soloName_(cfg) {
+  return String((cfg || config_())['고정기록자'] || '').trim().slice(0, 40);
+}
+/** '밝게' 로 적어두면 밝은 화면으로 고정하고, 내 설정의 밝기 고르는 칸을 숨깁니다 */
+function lightOnly_(cfg) {
+  return String((cfg || config_())['화면밝기'] || '').trim() === '밝게';
+}
+
 /** 설정 시트에 적어둔 아이콘 주소가 있으면 그것을, 없으면 기본 아이콘을 쓴다 */
 function iconUrl_() {
   var v = String(config_()['아이콘주소'] || '').trim();
@@ -208,6 +225,9 @@ function deny_() { return { ok: false, err: 'ROLE', message: '관리 PIN이 필�
  *  · 코드가 없거나 회수됐으면 PIN 으로 넘어갑니다.
  */
 function identify_(p) {
+  var cfg = config_();
+  // 혼자 쓰기: PIN도 코드도 묻지 않고 관리자로 들어옵니다
+  if (solo_(cfg)) return { role: 'admin', name: soloName_(cfg), code: '' };
   var code = String(p.code || '').trim();
   if (code) {
     var rec = findCode_(code);
@@ -360,6 +380,8 @@ function boot_(role, who) {
   return {
     role: role,
     me: who.name || '',
+    solo: solo_(cfg),
+    lightOnly: lightOnly_(cfg),
     students: students,
     logs: recentLogs_(LOG_LIMIT),
     exempts: readExempts_(),
