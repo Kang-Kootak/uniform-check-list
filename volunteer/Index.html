@@ -179,27 +179,26 @@ textarea.inp{min-height:132px;resize:vertical;font-family:var(--font-mono);font-
 .slot-h .cnt{flex:none;font-family:var(--font-mono);font-size:12.5px;font-weight:600;
   padding:4px 9px;border-radius:9px;background:var(--surface-2);color:var(--muted)}
 .slot-h .cnt.full{background:var(--ok-soft);color:var(--ok)}
-.prow{display:flex;align-items:center;gap:10px;padding:10px 12px 10px 14px;border-bottom:1px solid var(--line-2)}
-.prow:last-child{border-bottom:0}
-.prow .idbtn{flex:1;min-width:0;text-align:left;background:none;border:0;padding:3px 0;cursor:pointer}
-.prow .nm{font-size:16px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.prow .meta{font-size:12px;color:var(--muted);margin-top:1px;display:flex;gap:6px;flex-wrap:wrap}
 .sid{font-family:var(--font-mono);font-weight:500;letter-spacing:.02em}
 .tag{display:inline-block;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:999px;
   background:var(--warn-soft);color:var(--warn);letter-spacing:.02em}
 .tag.g{background:var(--surface-2);color:var(--muted)}
 .tag.ok{background:var(--ok-soft);color:var(--ok)}
-.stbtns{flex:none;display:flex;gap:6px}
-.st{min-width:54px;height:42px;border-radius:11px;border:1.5px solid var(--line);background:var(--surface);
-  font-size:14px;font-weight:600;cursor:pointer;color:var(--muted)}
-.st:active{transform:translateY(1px)}
-.st.in[aria-pressed="true"]{background:var(--ok);border-color:var(--ok);color:var(--accent-ink)}
-.st.out[aria-pressed="true"]{background:var(--crit-soft);border-color:color-mix(in srgb,var(--crit) 45%,transparent);color:var(--crit)}
-.st[disabled]{opacity:.5;cursor:default}
-.slot-f{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line-2);background:var(--surface-2)}
-.prow + .slot-f{border-top:0}
-.slot-f .btn{flex:1}
 .slot .empty{padding:20px 14px}
+
+/* ---------- 입력 ---------- */
+.seg2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg2 .chip{border-radius:12px;padding:11px 8px;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;min-width:0}
+.seg2 .chip svg{width:17px;height:17px;flex:none}
+select.inp{background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px;background-repeat:no-repeat;padding-right:34px}
+.minrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.minrow .inp{width:120px;font-family:var(--font-mono);font-size:18px;font-weight:600;text-align:right}
+.minrow span{font-size:14px;color:var(--muted)}
+.minrow .chips{margin-left:auto;flex-wrap:nowrap;gap:6px}
+.minrow .chip{padding:7px 10px;font-size:12.5px}
+.picks .chip{padding:6px 11px;font-size:12.5px}
+#entry.locked{opacity:.55;pointer-events:none}
 
 /* ---------- 누계 ---------- */
 .trow{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line-2);
@@ -307,7 +306,9 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
 }
 @media (max-width:370px){
-  .st{min-width:46px}
+  .minrow .inp{width:92px}
+  .seg2 .chip{font-size:13px;gap:4px;padding:11px 4px}
+  .seg2 .chip svg{display:none}
   .tile .n{font-size:19px}
   .who{max-width:34vw}
   .datebar .lbl b{font-size:17px}
@@ -338,13 +339,13 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
         <h1 class="brand" id="brand">자치회 <span class="tick">봉사</span> 수첩</h1>
         <div class="nowline" id="nowline">&nbsp;</div>
       </div>
-      <button class="who" id="whoBtn" type="button" aria-label="내 설정"><b id="whoName">확인자</b></button>
+      <button class="who" id="whoBtn" type="button" aria-label="내 설정"><b id="whoName">입력자</b></button>
       <button class="who icon" id="syncBtn" type="button" aria-label="새로고침"><span class="dot" id="syncDot"></span></button>
     </div>
   </header>
 
   <main>
-    <!-- 오늘: 순번대로 참여·불참 확인 -->
+    <!-- 입력: 그날 봉사한 학생과 시간 -->
     <section class="view" id="view-today">
       <div class="banner" id="pinWarn" hidden><span><b>PIN이 설정되지 않았습니다.</b> 주소를 아는 누구나 관리자로 들어옵니다. 스프레드시트의 <b>설정</b> 시트에서 기록PIN·관리PIN을 정해 주세요.</span></div>
       <div class="datebar">
@@ -355,7 +356,18 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
         <button class="navb" id="dNext" type="button" aria-label="다음 날">›</button>
       </div>
       <p class="note" id="dNote" hidden></p>
-      <div id="slots" class="stack"></div>
+      <div class="card pad stack" id="entry">
+        <div><label class="fl">구분</label><div class="seg2" id="slotChips"></div></div>
+        <div><label class="fl" for="fStu">학생</label>
+          <select class="inp" id="fStu"></select>
+          <div class="chips picks" id="fPlan" hidden></div></div>
+        <div><label class="fl" for="fMin" id="fMinLbl">봉사 시간</label>
+          <div class="minrow"><input class="inp" id="fMin" type="number" inputmode="numeric" min="1" max="600" placeholder="분"><span>분</span><div class="chips" id="fMinChips"></div></div>
+          <p class="note" id="fMinNote" style="margin-top:6px"></p></div>
+        <button class="btn primary wide" id="fGo" type="button">입력</button>
+      </div>
+      <div class="sect-h"><h2>입력 내역</h2><span class="sub" id="dayListSub"></span></div>
+      <div id="dayList" class="stack"></div>
     </section>
 
     <!-- 누계 -->
@@ -379,7 +391,7 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
 
     <!-- 순번표 -->
     <section class="view" id="view-sched" hidden>
-      <div class="banner info" id="schedInfo"><span>요일마다 아침 <b>교통지도</b>와 점심 <b>급식지도</b>에 설 부원을 정해 둡니다. 순번표를 바꿔도 <b>이미 남긴 기록은 그대로</b>입니다.</span></div>
+      <div class="banner info" id="schedInfo"><span><b>선택 기능</b>입니다. 요일마다 설 부원을 정해 두면 <b>입력</b> 화면에서 그날 순번 학생을 버튼으로 바로 고를 수 있습니다. 순번표를 바꿔도 이미 입력한 기록은 그대로입니다.</span></div>
       <div class="btnrow" data-admin>
         <button class="btn" id="autoBtn" type="button">자동으로 나누기</button>
       </div>
@@ -422,8 +434,8 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
       <div class="sect-h"><h2>봉사 시간 설정</h2></div>
       <div class="card pad stack">
         <div class="grid2">
-          <div><label class="fl" for="cAm">아침 교통지도 1회 (분)</label><input class="inp" id="cAm" type="number" inputmode="numeric" min="1" max="600"></div>
           <div><label class="fl" for="cPm">점심 급식지도 1회 (분)</label><input class="inp" id="cPm" type="number" inputmode="numeric" min="1" max="600"></div>
+          <div><label class="fl">아침 교통지도</label><p class="note" style="padding-top:4px">입력할 때마다 선생님이 시간을 넣습니다.</p></div>
         </div>
         <div class="grid2">
           <div><label class="fl" for="cFrom">학기 시작일</label><input class="inp" id="cFrom" type="date"></div>
@@ -433,7 +445,7 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
         <div><label class="fl">인정 시간 계산</label><div class="chips" id="roundChips"></div></div>
         <p class="note" id="roundHint"></p>
         <button class="btn primary wide" id="cfgGo" type="button">설정 저장</button>
-        <p class="note">시간을 바꾸면 <b>그다음 기록부터</b> 새 시간이 들어갑니다. 이미 남긴 기록은 부원 화면에서 한 건씩 고칠 수 있습니다.</p>
+        <p class="note">점심 시간을 바꾸면 <b>그다음 입력부터</b> 새 시간이 미리 채워집니다. 이미 입력한 기록은 입력 내역이나 부원 화면에서 한 건씩 고칠 수 있습니다.</p>
       </div>
 
       <div class="sect-h"><h2>자료 관리</h2></div>
@@ -454,7 +466,7 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
 <nav class="tabbar" id="tabbar" role="tablist" aria-label="화면 전환">
   <div class="in">
     <button class="tab" data-tab="today" role="tab" aria-selected="true" type="button">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"></path><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"></path></svg>오늘
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>입력
     </button>
     <button class="tab" data-tab="tally" role="tab" aria-selected="false" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>누계
@@ -487,17 +499,17 @@ var SLOT_ICON = {
   am:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2.5" width="8" height="19" rx="3"></rect><circle cx="12" cy="7" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="17" r="1.6"></circle></svg>',
   pm:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11h16a8 8 0 0 1-16 0z"></path><path d="M9 4c0 1.5 1 1.5 1 3M13 4c0 1.5 1 1.5 1 3"></path></svg>'
 };
-var ST_IN="참여", ST_OUT="불참", ST_STOP="중단";
+var ST_STOP="중단";
 var ROUNDS=[["내림","내림"],["반올림","반올림"],["그대로","소수 그대로"]];
 var THEMES=[["light","밝게"],["dark","어둡게"]];
-var LS_CACHE="jachi.cache.v1", LS_ME="jachi.me", LS_PIN="jachi.pin", LS_THEME="jachi.theme", LS_CODE="jachi.code";
+var LS_AM="jachi.am", LS_CACHE="jachi.cache.v2", LS_ME="jachi.me", LS_PIN="jachi.pin", LS_THEME="jachi.theme", LS_CODE="jachi.code";
 var POLL_MS=20000, IDLE_MS=15*60*1000;
 
 /* ============ 상태 ============ */
 var members=new Map(), sched=[], acts=[];
-var CFG={school:"", min:{am:30,pm:30}, round:"내림", from:"", to:"", termName:"", termSet:false};
+var CFG={school:"", pm:25, round:"내림", from:"", to:"", termName:"", termSet:false};
 var role=null, pinSet=true, sheetUrl="", appUrl="", PINS=null, rev=0, booted=false, meInfo=null;
-var tab="today", day=null, period="term", sortBy="no", rFrom="", rTo="", meAll=false;
+var tab="today", day=null, fSlot=new Date().getHours()<11?"am":"pm", amMin=lsGet(LS_AM,""), period="term", sortBy="no", rFrom="", rTo="", meAll=false;
 var busy=new Set(), inflight=0, lastAct=Date.now(), nameLock=false;
 
 /* ============ 유틸 ============ */
@@ -669,7 +681,7 @@ function renderWho(){
   $("syncDot").className = "dot"+(booted?" live":"");
 }
 
-/* ---------- 오늘 ---------- */
+/* ---------- 입력 ---------- */
 function canMark(k){
   if(role==="admin") return k<=todayKey();
   return role==="record" && k===todayKey();
@@ -682,60 +694,82 @@ function assigned(wd, slot){
   return sched.filter(function(x){ return x.day===wd && x.slot===slot; })
     .map(function(x){ return x.no; }).sort(cmpNo);
 }
+/** 아침 교통지도 시간 — 이번에 넣은 값, 없으면 그날(또는 가장 최근) 아침 입력에서 가져온다 */
+function guessAm(){
+  if(amMin) return amMin;
+  var best=null;
+  acts.forEach(function(a){ if(a.s==="am" && (!best || a.d>best.d || (a.d===best.d && (a.at||"")>(best.at||"")))) best=a; });
+  return best ? String(best.m) : "";
+}
 function renderToday(){
   if(!day) day=todayKey();
   var t=todayKey(), admin=role==="admin";
   $("dLabel").textContent = fmtDay(day);
-  $("dSub").textContent = (day===t ? "오늘 · " : "") + (isSchoolDay(day) ? "순번표 "+wdOf(day)+"요일" : "주말 — 순번 없음");
+  $("dSub").textContent = (day===t ? "오늘" : "지난 날") + (isSchoolDay(day) ? "" : " · 주말");
   $("dPrev").hidden = $("dNext").hidden = $("dPickWrap").hidden = !admin;
   $("dToday").hidden = !admin || day===t;
   $("dNext").disabled = day>=t;
   $("dPick").max = t;
   var note=$("dNote");
-  if(!canMark(day) && role){ note.hidden=false; note.textContent = day>t ? "아직 오지 않은 날입니다." : "지난 날짜는 관리 PIN으로만 고칠 수 있습니다."; }
-  else if(admin && day<t){ note.hidden=false; note.innerHTML = "<b>지난 날짜</b>를 고치고 있습니다. 비어 있는 칸은 확인하지 않은 순번입니다."; }
+  if(!canMark(day) && role){ note.hidden=false; note.textContent = day>t ? "아직 오지 않은 날입니다." : "지난 날짜는 관리 PIN으로만 입력할 수 있습니다."; }
+  else if(admin && day<t){ note.hidden=false; note.innerHTML = "<b>지난 날짜</b>에 입력하고 있습니다."; }
   else note.hidden=true;
-
-  var wd=wdOf(day), html="";
-  SLOTS.forEach(function(slot){
-    var plan = isSchoolDay(day) ? assigned(wd, slot) : [];
-    var recs = acts.filter(function(a){ return a.d===day && a.s===slot; });
-    var extra = recs.filter(function(a){ return plan.indexOf(a.no)<0; }).map(function(a){ return a.no; }).sort(cmpNo);
-    var list = plan.concat(extra);
-    var nIn=recs.filter(function(a){ return a.st===ST_IN; }).length, nOut=recs.length-nIn;
-    var left = plan.filter(function(no){ return !actOf(day, slot, no); }).length;
-    var ok = canMark(day);
-    html += '<div class="card slot">'+
-      '<div class="slot-h"><span class="ic">'+SLOT_ICON[slot]+'</span>'+
-        '<div class="t"><b>'+SLOT_NAME[slot]+'</b><span>1회 '+hm(CFG.min[slot])+' · 참여 '+nIn+(nOut?' · 불참 '+nOut:'')+'</span></div>'+
-        (list.length ? '<span class="cnt'+(!left ? " full" : "")+'" title="확인한 사람 / 전체">'+(list.length-left)+'/'+list.length+'</span>' : '')+
-      '</div>'+
-      (list.length ? list.map(function(no){ return personRow(no, slot, plan.indexOf(no)<0, ok); }).join("")
-        : '<div class="empty">'+(isSchoolDay(day) ? (role==="admin" ? '이 요일 순번이 비어 있습니다. <b>순번</b> 탭에서 정해 주세요.' : '이 요일 순번이 비어 있습니다.') : '주말에는 순번이 없습니다.')+'</div>')+
-      (ok ? '<div class="slot-f">'+
-        (left ? '<button class="btn" type="button" data-act="all" data-slot="'+slot+'">남은 '+left+'명 참여</button>' : '')+
-        '<button class="btn" type="button" data-act="addp" data-slot="'+slot+'">＋ 부원 추가</button>'+
-      '</div>' : '')+
-    '</div>';
-  });
-  $("slots").innerHTML = html;
+  $("entry").classList.toggle("locked", !canMark(day));
+  renderEntry();
+  renderDayList();
 }
-function personRow(no, slot, extra, ok){
-  var m=members.get(no), a=actOf(day, slot, no);
-  var nm = m ? m.name : (a ? a.name : no);
-  var meta = '<span class="sid">'+esc(no)+'</span>'+(m && m.dept ? '<span>'+esc(m.dept)+'</span>' : '');
-  if(a && !a.pending){
-    meta += '<span>'+(a.st===ST_IN ? (a.m!==CFG.min[slot] ? hm(a.m)+' · ' : '') : '')+'확인 '+esc(a.by)+(a.at && a.d===todayKey() ? ' '+fmtClock(a.at) : '')+'</span>';
-  } else if(a && a.pending) meta += '<span>보내는 중…</span>';
-  var key=day+slot+no, dis = (!ok || busy.has(key)) ? " disabled" : "";
-  return '<div class="prow">'+
-    '<button class="idbtn" type="button" data-act="person" data-no="'+esc(no)+'">'+
-      '<div class="nm">'+esc(nm)+(extra ? '<span class="tag">순번 외</span>' : '')+(m && m.state===ST_STOP ? '<span class="tag g">활동 중단</span>' : '')+'</div>'+
-      '<div class="meta">'+meta+'</div></button>'+
-    '<div class="stbtns">'+
-      '<button class="st in" type="button" data-act="mark" data-slot="'+slot+'" data-no="'+esc(no)+'" data-v="'+ST_IN+'" aria-pressed="'+(!!a && a.st===ST_IN)+'"'+dis+'>참여</button>'+
-      '<button class="st out" type="button" data-act="mark" data-slot="'+slot+'" data-no="'+esc(no)+'" data-v="'+ST_OUT+'" aria-pressed="'+(!!a && a.st===ST_OUT)+'"'+dis+'>불참</button>'+
-    '</div></div>';
+function renderEntry(){
+  $("slotChips").innerHTML = SLOTS.map(function(sl){
+    return '<button class="chip" type="button" data-act="fslot" data-v="'+sl+'" aria-pressed="'+(fSlot===sl)+'">'+SLOT_ICON[sl]+SLOT_NAME[sl]+'</button>';
+  }).join("");
+  // 학생 드롭다운 — 부원 명단의 학번·이름. 이미 입력한 학생은 ✓ 와 시간이 붙습니다
+  var sel=$("fStu"), keep=sel.value;
+  var list=Array.from(members.values()).filter(function(m){ return m.state!==ST_STOP || m.no===keep; }).sort(function(a,b){ return cmpNo(a.no,b.no); });
+  sel.innerHTML = (list.length ? '<option value="">학생을 고르세요 ('+list.length+'명)</option>' : '<option value="">'+(role==="admin" ? '관리 탭에서 부원을 먼저 등록해 주세요' : '등록된 부원이 없습니다')+'</option>')+
+    list.map(function(m){
+      var a=actOf(day, fSlot, m.no);
+      return '<option value="'+esc(m.no)+'">'+esc(m.no+"  "+m.name)+(m.dept?' ('+esc(m.dept)+')':'')+(a?'  ✓ '+esc(hm(a.m)):'')+'</option>';
+    }).join("");
+  sel.value = keep && members.has(keep) ? keep : "";
+  // 순번표를 정해 두었으면 그날 순번 학생을 버튼으로
+  var plan=(isSchoolDay(day) ? assigned(wdOf(day), fSlot) : []).filter(function(no){ return members.has(no) && !actOf(day, fSlot, no); });
+  var box=$("fPlan");
+  box.hidden=!plan.length;
+  box.innerHTML = plan.length ? '<span class="note" style="align-self:center">순번</span>'+plan.map(function(no){
+    return '<button class="chip" type="button" data-act="fpick" data-no="'+esc(no)+'" aria-pressed="'+(sel.value===no)+'">'+esc(memName(no))+'</button>';
+  }).join("") : "";
+  // 시간 — 점심은 설정값, 아침은 선생님이 넣는 값
+  var inp=$("fMin");
+  if(document.activeElement!==inp) inp.value = fSlot==="pm" ? (inp.dataset.slot==="pm" && inp.value ? inp.value : CFG.pm) : guessAm();
+  inp.dataset.slot=fSlot;
+  $("fMinLbl").textContent = fSlot==="pm" ? "봉사 시간 (점심 급식지도)" : "봉사 시간 (아침 교통지도)";
+  $("fMinChips").innerHTML = fSlot==="am" ? [20,30,40,50].map(function(n){
+    return '<button class="chip" type="button" data-act="fmin" data-v="'+n+'">'+n+'</button>';
+  }).join("") : "";
+  $("fMinNote").innerHTML = fSlot==="pm"
+    ? "점심 급식지도는 1회 <b>"+CFG.pm+"분</b>으로 정해져 있습니다. (관리 탭에서 바꿉니다)"
+    : "그날 교통지도 시간을 넣어 주세요. 넣은 시간은 다음 학생에게도 그대로 남습니다.";
+}
+function renderDayList(){
+  var mine=acts.filter(function(a){ return a.d===day; });
+  var total=0; mine.forEach(function(a){ total+=a.m; });
+  $("dayListSub").textContent = mine.length ? mine.length+"건 · "+hm(total) : "";
+  var ok=canMark(day);
+  $("dayList").innerHTML = SLOTS.map(function(sl){
+    var rows=mine.filter(function(a){ return a.s===sl; }).sort(function(a,b){ return cmpNo(a.no,b.no); });
+    var sum=0; rows.forEach(function(a){ sum+=a.m; });
+    return '<div class="card slot">'+
+      '<div class="slot-h"><span class="ic">'+SLOT_ICON[sl]+'</span>'+
+        '<div class="t"><b>'+SLOT_NAME[sl]+'</b><span>'+(rows.length ? rows.length+'명 · 합계 '+hm(sum) : '아직 없음')+'</span></div></div>'+
+      (rows.length ? '<ul class="list">'+rows.map(function(a){
+        return '<li><button class="mrow" type="button" data-act="person" data-no="'+esc(a.no)+'" style="flex:1;min-width:0">'+
+          '<span class="r"><b style="font-weight:600">'+esc(memName(a.no, a.name))+'</b> <span class="sid" style="font-size:11.5px;color:var(--muted)">'+esc(a.no)+'</span>'+
+          '<small>'+(a.pending ? '보내는 중…' : '입력 '+esc(a.by)+(a.at && a.d===todayKey() ? ' '+fmtClock(a.at) : '')+(a.memo?' · '+esc(a.memo):''))+'</small></span></button>'+
+          '<span class="m">'+esc(hm(a.m))+'</span>'+
+          (ok && !a.pending ? '<button class="fix" type="button" data-act="fix" data-id="'+esc(a.id)+'">고치기</button>' : '')+'</li>';
+      }).join("")+'</ul>' : '')+
+    '</div>';
+  }).join("");
 }
 
 function requireName(){
@@ -743,70 +777,31 @@ function requireName(){
   askName();
   return false;
 }
-/** 참여 / 불참 누르기 — 이미 눌린 쪽을 다시 누르면 지웁니다 */
-function doMark(slot, no, v, memo){
-  var k=day, key=k+slot+no;
-  if(!canMark(k) || busy.has(key)) return;
+/** 학생 한 명 입력 — 같은 날 같은 구분에 이미 있으면 시간만 고칩니다 */
+function doSave(){
+  var k=day, slot=fSlot, no=$("fStu").value, mins=Math.round(Number($("fMin").value));
+  if(!canMark(k)) return;
   if(!requireName()) return;
-  var cur=actOf(k, slot, no);
-  var status = (cur && cur.st===v) ? "" : v;
-  var prev = cur ? JSON.parse(JSON.stringify(cur)) : null;
-  // 화면부터 바꾸고, 서버 답이 오면 맞춘다
-  if(!status) acts=acts.filter(function(a){ return a!==cur; });
-  else if(cur){ cur.st=status; cur.m = status===ST_OUT ? 0 : (prev.st===ST_IN ? prev.m : CFG.min[slot]); cur.by=me(); cur.pending=true; }
-  else acts.push({id:rid(), d:k, s:slot, no:no, name:memName(no), m:status===ST_IN?CFG.min[slot]:0, st:status, by:me(), at:new Date().toISOString(), memo:memo||"", pending:true});
-  busy.add(key); renderToday();
-  call("mark", {date:k, slot:slot, no:no, status:status, by:me(), memo:memo||""}).then(function(d){
-    acts=acts.filter(function(a){ return !(a.d===k && a.s===slot && a.no===no); });
-    if(d.rec) acts.push(d.rec);
+  if(!no){ toast("학생을 골라 주세요."); $("fStu").focus(); return; }
+  if(!$("fMin").value || !(mins>=1 && mins<=600)){ toast("봉사 시간을 1~600분으로 넣어 주세요."); $("fMin").focus(); return; }
+  var key=k+slot+no;
+  if(busy.has(key)) return;
+  if(slot==="am"){ amMin=String(mins); lsSet(LS_AM, amMin); }
+  var cur=actOf(k, slot, no), prev=cur ? JSON.parse(JSON.stringify(cur)) : null;
+  var tmp={id:rid(), d:k, s:slot, no:no, name:memName(no), m:mins, by:me(), at:new Date().toISOString(), memo:cur?cur.memo:"", pending:true};
+  acts=acts.filter(function(a){ return a!==cur; }).concat([tmp]);
+  busy.add(key);
+  $("fStu").value="";
+  renderToday();
+  call("save", {date:k, slot:slot, no:no, min:mins, memo:tmp.memo, by:me()}).then(function(d){
+    acts=acts.filter(function(a){ return a!==tmp; }).concat([d.rec]);
     rev=d.rev;
-    var nm=memName(no);
-    toast(!status ? nm+" 표시를 지웠습니다." : nm+" "+SLOT_SHORT[slot]+"지도 "+status+(status===ST_IN?" · "+hm(d.rec.m):""));
+    toast(memName(no)+" "+SLOT_NAME[slot]+" "+(d.updated ? hm(d.before)+" → "+hm(d.rec.m)+"로 고쳤습니다." : hm(d.rec.m)+" 입력했습니다."));
   }, function(e){
-    acts=acts.filter(function(a){ return !(a.d===k && a.s===slot && a.no===no); });
+    acts=acts.filter(function(a){ return a!==tmp; });
     if(prev) acts.push(prev);
     toast(errMsg(e));
   }).then(function(){ busy.delete(key); renderToday(); if($("sheet").open && sheetNo===no) drawPerson(); });
-}
-function doAll(slot){
-  var k=day;
-  if(!canMark(k) || !requireName()) return;
-  var nos=assigned(wdOf(k), slot).filter(function(no){ return !actOf(k, slot, no); });
-  if(!nos.length) return;
-  var tmp=nos.map(function(no){ return {id:rid(), d:k, s:slot, no:no, name:memName(no), m:CFG.min[slot], st:ST_IN, by:me(), at:new Date().toISOString(), memo:"", pending:true}; });
-  acts=acts.concat(tmp); renderToday();
-  call("mark_all", {date:k, slot:slot, nos:nos, by:me()}).then(function(d){
-    acts=acts.filter(function(a){ return tmp.indexOf(a)<0; }).concat(d.recs||[]);
-    rev=d.rev;
-    toast(SLOT_NAME[slot]+" "+(d.recs||[]).length+"명 참여로 표시했습니다.");
-  }, function(e){
-    acts=acts.filter(function(a){ return tmp.indexOf(a)<0; });
-    toast(errMsg(e));
-  }).then(renderToday);
-}
-/** 순번이 아닌 부원이 대신 섰을 때 */
-function askAddPerson(slot){
-  if(!requireName()) return;
-  modal('<div class="sheet-h"><div><h3>다른 부원 추가</h3><div class="sm">'+esc(fmtDay(day))+' · '+SLOT_NAME[slot]+'</div></div>'+
-      '<button class="close" type="button" data-act="mclose" aria-label="닫기">✕</button></div>'+
-    '<div class="sheet-b">'+
-      '<input class="inp" id="apQ" placeholder="이름 · 초성 · 학번" autocomplete="off">'+
-      '<div class="pickbox" id="apList"></div>'+
-      '<p class="note">고른 부원은 <b>참여</b>로 기록되고 <span class="tag">순번 외</span> 표시가 붙습니다. (대신 선 경우 등)</p>'+
-    '</div>');
-  function draw(){
-    var q=$("apQ").value.trim();
-    var list=searchMembers(q).filter(function(m){ return m.state!==ST_STOP; });
-    $("apList").innerHTML = list.length ? list.map(function(m){
-      var has=actOf(day, slot, m.no);
-      return '<button class="mrow" type="button" data-act="appick" data-slot="'+slot+'" data-no="'+esc(m.no)+'"'+(has?' disabled style="opacity:.5"':'')+'>'+
-        '<span class="grow"><b>'+esc(m.name)+'</b> <span class="sid">'+esc(m.no)+(m.dept?' · '+esc(m.dept):'')+'</span></span>'+
-        (has ? '<span class="tag ok">'+esc(has.st)+'</span>' : '')+'</button>';
-    }).join("") : '<div class="empty">찾는 부원이 없습니다.</div>';
-  }
-  $("apQ").addEventListener("input", draw);
-  draw();
-  setTimeout(function(){ $("apQ").focus(); }, 80);
 }
 function searchMembers(q){
   var all=Array.from(members.values()).sort(function(a,b){ return cmpNo(a.no,b.no); });
@@ -829,15 +824,14 @@ function range(){
 /** 부원별 누계 — 서버 writeTally_ 과 같은 계산 */
 function tallyOf(from, to){
   var by={};
-  members.forEach(function(m){ by[m.no]={no:m.no, name:m.name, dept:m.dept, am:0, pm:0, out:0, min:0, keep:m.state!==ST_STOP, stop:m.state===ST_STOP}; });
+  members.forEach(function(m){ by[m.no]={no:m.no, name:m.name, dept:m.dept, am:0, pm:0, min:0, keep:m.state!==ST_STOP, stop:m.state===ST_STOP}; });
   acts.forEach(function(a){
     if(a.d<from || a.d>to) return;
-    var t=by[a.no] || (by[a.no]={no:a.no, name:a.name, dept:"", am:0, pm:0, out:0, min:0, keep:false, gone:true});
-    if(a.st===ST_OUT){ t.out++; return; }
+    var t=by[a.no] || (by[a.no]={no:a.no, name:a.name, dept:"", am:0, pm:0, min:0, keep:false, gone:true});
     t[a.s]++; t.min+=a.m;
   });
   return Object.keys(by).map(function(k){ return by[k]; })
-    .filter(function(t){ return t.keep || t.am || t.pm || t.out; });
+    .filter(function(t){ return t.keep || t.am || t.pm; });
 }
 function renderTally(){
   var r=range();
@@ -855,7 +849,7 @@ function renderTally(){
   rows.forEach(function(t){ sumMin+=t.min; sumN+=t.am+t.pm; sumCredit+=credit(t.min); if(t.am+t.pm) people++; });
   $("tallyTiles").innerHTML=
     '<div class="tile"><span class="n">'+people+'<small>명</small></span><span class="k">활동한 부원</span></div>'+
-    '<div class="tile"><span class="n">'+sumN+'<small>회</small></span><span class="k">참여 횟수</span></div>'+
+    '<div class="tile"><span class="n">'+sumN+'<small>회</small></span><span class="k">봉사 횟수</span></div>'+
     '<div class="tile"><span class="n">'+(Math.round(sumCredit*10)/10)+'<small>시간</small></span><span class="k">인정 합계 · 실제 '+hm(sumMin)+'</span></div>';
   $("tallySub").textContent = rows.length+"명";
   $("sortChips").innerHTML=[["no","학번순"],["hrs","시간 많은 순"]].map(function(p){
@@ -865,14 +859,14 @@ function renderTally(){
     var tags = (t.stop ? ' <span class="tag g">활동 중단</span>' : '')+(t.gone ? ' <span class="tag g">명단에 없음</span>' : '');
     return '<button class="trow'+(t.min?'':' zero')+(t.stop?' stop':'')+'" type="button" data-act="person" data-no="'+esc(t.no)+'">'+
       '<span class="who2"><b>'+esc(t.name)+'</b><span class="sid">'+esc(t.no)+'</span>'+tags+
-        '<small>교통 '+t.am+'회 · 급식 '+t.pm+'회'+(t.out?' · <span style="color:var(--crit)">불참 '+t.out+'회</span>':'')+'</small></span>'+
+        '<small>교통 '+t.am+'회 · 급식 '+t.pm+'회</small></span>'+
       '<span class="hrs"><b>'+hm(t.min)+'</b><span>인정 '+creditLabel(t.min)+'</span></span></button>';
   }).join("") : '<div class="empty"><strong>아직 부원이 없습니다</strong>관리 탭에서 부원을 등록해 주세요.</div>';
 }
 function tallyTSV(){
   var r=range(), rows=tallyOf(r.from, r.to).sort(function(a,b){ return cmpNo(a.no,b.no); });
-  var out=[["학번","이름","부서","교통지도(회)","급식지도(회)","불참(회)","인정 분","시간 환산","인정 시간"].join("\t")];
-  rows.forEach(function(t){ out.push([t.no,t.name,t.dept,t.am,t.pm,t.out,t.min,hm(t.min),credit(t.min)].join("\t")); });
+  var out=[["학번","이름","부서","교통지도(회)","급식지도(회)","인정 분","시간 환산","인정 시간"].join("\t")];
+  rows.forEach(function(t){ out.push([t.no,t.name,t.dept,t.am,t.pm,t.min,hm(t.min),credit(t.min)].join("\t")); });
   return out.join("\n");
 }
 
@@ -1004,7 +998,7 @@ function renderAdmin(){
     '<div class="kv"><span class="k">앱 주소</span><span class="v" style="font-size:12px">'+esc(appUrl||"배포 후 표시됩니다")+'</span></div>'+
     '<div class="kv"><span class="k">기록 PIN · 회장단</span><span class="v">'+esc(PINS&&PINS.rec||"없음")+'</span></div>'+
     '<div class="kv"><span class="k">관리 PIN · 선생님</span><span class="v">'+esc(PINS&&PINS.adm||"없음")+'</span></div>'+
-    '<p class="note" style="margin-top:8px"><b>기록 PIN</b>으로 들어오면 오늘 날짜의 참여·불참 표시와 순번표 보기만 됩니다. PIN은 스프레드시트 <b>설정</b> 시트에서 바꿉니다.</p>';
+    '<p class="note" style="margin-top:8px"><b>기록 PIN</b>으로 들어오면 오늘 날짜 입력과 순번표 보기만 됩니다. PIN은 스프레드시트 <b>설정</b> 시트에서 바꿉니다.</p>';
   if(sheetUrl) $("sheetLink").href=sheetUrl;
 
   var all=Array.from(members.values()).sort(function(a,b){ return cmpNo(a.no,b.no); });
@@ -1025,8 +1019,8 @@ function renderAdmin(){
   $("codeAll").disabled = !noCode;
   if(!appUrl) $("codeState").innerHTML += '<br><span style="color:var(--warn)">앱을 웹 앱으로 배포한 주소에서 열어야 링크 주소가 완성됩니다.</span>';
 
-  if(document.activeElement && /^c(Am|Pm|From|To)$/.test(document.activeElement.id)) return;   // 입력 중에는 덮어쓰지 않는다
-  $("cAm").value=CFG.min.am; $("cPm").value=CFG.min.pm;
+  if(document.activeElement && /^c(Pm|From|To)$/.test(document.activeElement.id)) return;   // 입력 중에는 덮어쓰지 않는다
+  $("cPm").value=CFG.pm;
   $("cFrom").value=CFG.termSet?CFG.from:""; $("cTo").value=CFG.termSet?CFG.to:"";
   cfgRound=CFG.round; renderRound();
 }
@@ -1078,8 +1072,8 @@ function drawPerson(){
   var nm = m ? m.name : (mine[0] ? mine[0].name : no);
   var r = admin ? range() : {from:todayKey(), to:todayKey(), label:"오늘"};
   var inR=mine.filter(function(a){ return a.d>=r.from && a.d<=r.to; }).sort(function(a,b){ return a.d<b.d?1:a.d>b.d?-1:(a.s<b.s?-1:1); });
-  var min=0, nAm=0, nPm=0, nOut=0;
-  inR.forEach(function(a){ if(a.st===ST_OUT) nOut++; else { min+=a.m; if(a.s==="am") nAm++; else nPm++; } });
+  var min=0, nAm=0, nPm=0;
+  inR.forEach(function(a){ min+=a.m; if(a.s==="am") nAm++; else nPm++; });
   var plan=sched.filter(function(x){ return x.no===no; }).sort(function(a,b){ return DAYS.indexOf(a.day)-DAYS.indexOf(b.day) || (a.slot<b.slot?-1:1); });
   var h='<div class="sheet-h"><div><h3>'+esc(nm)+'</h3><div class="sm"><span class="sid">'+esc(no)+'</span>'+(m&&m.dept?' · '+esc(m.dept):'')+(m&&m.state===ST_STOP?' · 활동 중단':'')+(!m?' · 명단에 없음':'')+'</div></div>'+
       '<button class="close" type="button" data-act="sclose" aria-label="닫기">✕</button></div>'+
@@ -1087,15 +1081,15 @@ function drawPerson(){
   if(admin){
     h+='<div class="block"><h4>'+esc(r.label)+' 누계</h4>'+
       '<div class="bigcount"><b>'+esc(hm(min))+'</b><span class="credit">결재 인정 '+creditLabel(min)+'</span></div>'+
-      '<p class="note">교통지도 '+nAm+'회 · 급식지도 '+nPm+'회'+(nOut?' · 불참 '+nOut+'회':'')+'</p></div>';
+      '<p class="note">교통지도 '+nAm+'회 · 급식지도 '+nPm+'회</p></div>';
   }
   h+='<div class="block"><h4>맡은 순번</h4><p style="font-size:14px">'+(plan.length ? plan.map(function(x){ return x.day+"요일 "+SLOT_NAME[x.slot]; }).map(esc).join("<br>") : '<span class="note">순번이 없습니다.</span>')+'</p></div>';
   h+='<div class="block"><h4>'+(admin?'활동 기록':'오늘 기록')+' '+inR.length+'건</h4>'+
     (inR.length ? '<div class="card"><ul class="list">'+inR.map(function(a){
       return '<li><span class="d">'+esc(fmtMD(a.d))+'</span><span class="r">'+SLOT_NAME[a.s]+
-        '<small>확인 '+esc(a.by)+(a.memo?' · '+esc(a.memo):'')+'</small></span>'+
-        '<span class="m'+(a.st===ST_OUT?' out':'')+'">'+(a.st===ST_OUT?'불참':esc(hm(a.m)))+'</span>'+
-        (admin && !a.pending ? '<button class="fix" type="button" data-act="fix" data-id="'+esc(a.id)+'">고치기</button>' : '')+'</li>';
+        '<small>입력 '+esc(a.by)+(a.memo?' · '+esc(a.memo):'')+'</small></span>'+
+        '<span class="m">'+esc(hm(a.m))+'</span>'+
+        (canMark(a.d) && !a.pending ? '<button class="fix" type="button" data-act="fix" data-id="'+esc(a.id)+'">고치기</button>' : '')+'</li>';
     }).join("")+'</ul></div>' : '<p class="note">이 기간에 남은 기록이 없습니다.</p>')+'</div>';
   if(admin && m){
     h+='<div class="block"><h4>개인 조회 링크</h4>'+
@@ -1106,7 +1100,7 @@ function drawPerson(){
       '<div class="block"><h4>부원 관리</h4><div class="btnrow">'+
         '<button class="btn" type="button" data-act="pstate">'+(m.state===ST_STOP?'활동 다시 시작':'활동 중단')+'</button>'+
         '<button class="btn danger" type="button" data-act="pdel">명단에서 삭제</button></div>'+
-      '<p class="note">활동 중단은 순번표와 추가 목록에서만 빠지고 누계에는 남습니다. 삭제해도 이미 남긴 활동 기록은 지워지지 않습니다.</p></div>';
+      '<p class="note">활동 중단은 입력 드롭다운과 순번표에서만 빠지고 누계에는 남습니다. 삭제해도 이미 남긴 활동 기록은 지워지지 않습니다.</p></div>';
   }
   $("sheetIn").innerHTML = h+'</div>';
 }
@@ -1116,26 +1110,27 @@ function askFix(id){
   modal('<div class="sheet-h"><div><h3>기록 고치기</h3><div class="sm">'+esc(memName(a.no,a.name))+' · '+esc(fmtDay(a.d))+' · '+SLOT_NAME[a.s]+'</div></div>'+
       '<button class="close" type="button" data-act="mclose" aria-label="닫기">✕</button></div>'+
     '<div class="sheet-b">'+
-      (a.st===ST_IN ? '<div><label class="fl" for="fxMin">인정 시간 (분)</label><input class="inp" id="fxMin" type="number" inputmode="numeric" min="0" max="600" value="'+a.m+'"></div>'
-        : '<p class="note">불참 기록은 인정 시간이 0분입니다.</p>')+
+      '<div><label class="fl" for="fxMin">봉사 시간 (분)</label><input class="inp" id="fxMin" type="number" inputmode="numeric" min="1" max="600" value="'+a.m+'"></div>'+
       '<div><label class="fl" for="fxMemo">메모</label><input class="inp" id="fxMemo" maxlength="100" value="'+esc(a.memo)+'" placeholder="예: 시험 기간 단축, 대신 섬"></div>'+
       '<button class="btn primary wide" type="button" id="fxGo">저장</button>'+
       '<button class="btn danger wide" type="button" id="fxDel">이 기록 지우기</button>'+
     '</div>');
+  function after(){ closeModal(); renderToday(); if(role==="admin"){ renderTally(); } if($("sheet").open) drawPerson(); }
   $("fxGo").onclick=function(){
-    var mins = a.st===ST_IN ? Math.round(Number($("fxMin").value)) : 0;
-    if(!(mins>=0 && mins<=600)){ toast("0~600분으로 넣어 주세요."); return; }
+    var mins=Math.round(Number($("fxMin").value));
+    if(!(mins>=1 && mins<=600)){ toast("1~600분으로 넣어 주세요."); return; }
+    if(!requireName()) return;
     $("fxGo").disabled=true;
-    call("edit", {id:a.id, min:mins, memo:$("fxMemo").value}).then(function(d){
-      a.m=d.rec.m; a.memo=d.rec.memo; rev=d.rev;
-      closeModal(); toast("기록을 고쳤습니다."); render(); if($("sheet").open) drawPerson();
+    call("save", {date:a.d, slot:a.s, no:a.no, min:mins, memo:$("fxMemo").value, by:me()}).then(function(d){
+      acts=acts.filter(function(x){ return x!==a; }).concat([d.rec]); rev=d.rev;
+      toast("기록을 고쳤습니다."); after();
     }, function(e){ $("fxGo").disabled=false; toast(errMsg(e)); });
   };
   $("fxDel").onclick=function(){
     $("fxDel").disabled=true;
-    call("mark", {date:a.d, slot:a.s, no:a.no, status:"", by:me()||"관리자"}).then(function(d){
+    call("del", {id:a.id}).then(function(d){
       acts=acts.filter(function(x){ return x!==a; }); rev=d.rev;
-      closeModal(); toast("기록을 지웠습니다."); render(); if($("sheet").open) drawPerson();
+      toast(memName(a.no,a.name)+" "+SLOT_NAME[a.s]+" 기록을 지웠습니다."); after();
     }, function(e){ $("fxDel").disabled=false; toast(errMsg(e)); });
   };
 }
@@ -1146,8 +1141,8 @@ function renderMe(){
   if(!meInfo){ box.innerHTML='<div class="empty"><strong>불러오는 중…</strong></div>'; return; }
   var from=meAll?"0000-00-00":CFG.from, to=meAll?"9999-12-31":CFG.to;
   var list=acts.filter(function(a){ return a.d>=from && a.d<=to; }).sort(function(a,b){ return a.d<b.d?1:a.d>b.d?-1:(a.s<b.s?-1:1); });
-  var min=0, nAm=0, nPm=0, nOut=0;
-  list.forEach(function(a){ if(a.st===ST_OUT) nOut++; else { min+=a.m; if(a.s==="am") nAm++; else nPm++; } });
+  var min=0, nAm=0, nPm=0;
+  list.forEach(function(a){ min+=a.m; if(a.s==="am") nAm++; else nPm++; });
   var t=todayKey(), twd=isSchoolDay(t)?wdOf(t):"";
   var plan=sched.slice().sort(function(a,b){ return DAYS.indexOf(a.day)-DAYS.indexOf(b.day) || (a.slot<b.slot?-1:1); });
   var todays=plan.filter(function(x){ return x.day===twd; });
@@ -1162,7 +1157,7 @@ function renderMe(){
     '<div class="tiles">'+
       '<div class="tile"><span class="n">'+nAm+'<small>회</small></span><span class="k">아침 교통지도</span></div>'+
       '<div class="tile"><span class="n">'+nPm+'<small>회</small></span><span class="k">점심 급식지도</span></div>'+
-      '<div class="tile"><span class="n">'+nOut+'<small>회</small></span><span class="k">불참</span></div>'+
+      '<div class="tile"><span class="n">'+(nAm+nPm)+'<small>회</small></span><span class="k">모두 합쳐</span></div>'+
     '</div>'+
     '<div class="sect-h"><h2>내 순번</h2></div>'+
     '<div class="card pad">'+(plan.length ? plan.map(function(x){
@@ -1172,9 +1167,9 @@ function renderMe(){
     '<div class="seg"><button class="chip" type="button" data-act="meall" data-v="0" aria-pressed="'+(!meAll)+'">'+esc(CFG.termName||"이번 학기")+'</button><button class="chip" type="button" data-act="meall" data-v="1" aria-pressed="'+meAll+'">전체 기간</button></div>'+
     (list.length ? '<div class="card"><ul class="list">'+list.map(function(a){
       return '<li><span class="d">'+esc(fmtMD(a.d))+'</span><span class="r">'+SLOT_NAME[a.s]+(a.memo?'<small>'+esc(a.memo)+'</small>':'')+'</span>'+
-        '<span class="m'+(a.st===ST_OUT?' out':'')+'">'+(a.st===ST_OUT?'불참':esc(hm(a.m)))+'</span></li>';
+        '<span class="m">'+esc(hm(a.m))+'</span></li>';
     }).join("")+'</ul></div>' : '<div class="card"><div class="empty">아직 남은 기록이 없습니다.</div></div>')+
-    '<p class="note">기록은 회장단·담당 선생님이 확인한 것만 남습니다. 빠지거나 틀린 기록이 있으면 담당 선생님께 말씀드려 주세요.</p>'+
+    '<p class="note">기록은 담당 선생님·회장단이 입력한 것만 남습니다. 빠지거나 틀린 기록이 있으면 담당 선생님께 말씀드려 주세요.</p>'+
     '<p class="note"><button class="btn sm" type="button" data-act="melogout">이 휴대폰에서 링크 지우기</button></p>';
 }
 function codeGone(){
@@ -1191,9 +1186,9 @@ function modal(html){ $("modalIn").innerHTML=html; if(!$("modal").open) $("modal
 function closeModal(){ if($("modal").open) $("modal").close(); }
 function askName(){
   nameLock=true;
-  modal('<div class="sheet-h"><div><h3>확인자 이름</h3><div class="sm">이 휴대폰에만 저장됩니다</div></div></div>'+
+  modal('<div class="sheet-h"><div><h3>입력자 이름</h3><div class="sm">이 휴대폰에만 저장됩니다</div></div></div>'+
     '<div class="sheet-b">'+
-    '<p class="note">누가 참여를 확인했는지 기록에 함께 남깁니다. <b>이름을 넣어야 표시할 수 있습니다.</b></p>'+
+    '<p class="note">누가 입력했는지 기록에 함께 남깁니다. <b>이름을 넣어야 입력할 수 있습니다.</b></p>'+
     '<div><label class="fl" for="nameIn">이름</label><input class="inp" id="nameIn" placeholder="예: 김선생 / 회장 이도현" maxlength="40" autocomplete="off"></div>'+
     '<button class="btn primary wide" type="button" id="nameGo">저장하고 시작하기</button></div>');
   var i=$("nameIn"); setTimeout(function(){ i.focus(); },80);
@@ -1210,12 +1205,12 @@ function askWho(){
   modal('<div class="sheet-h"><div><h3>내 설정</h3><div class="sm">이 휴대폰에만 저장됩니다</div></div>'+
       '<button class="close" type="button" data-act="mclose" aria-label="닫기">✕</button></div>'+
     '<div class="sheet-b">'+
-      '<div class="block"><h4>확인자 이름</h4><input class="inp" id="whoIn" maxlength="40" value="'+esc(me())+'" placeholder="예: 김선생 / 회장 이도현">'+
+      '<div class="block"><h4>입력자 이름</h4><input class="inp" id="whoIn" maxlength="40" value="'+esc(me())+'" placeholder="예: 김선생 / 회장 이도현">'+
         '<button class="btn primary wide" type="button" id="wYes">이름 저장</button></div>'+
       '<div class="block"><h4>화면 밝기</h4><div class="chips" id="thmChips">'+THEMES.map(function(t){
         return '<button class="chip" type="button" data-v="'+t[0]+'" aria-pressed="'+(cur===t[0])+'">'+t[1]+'</button>'; }).join("")+'</div></div>'+
       '<div class="block"><h4>접속 권한</h4>'+
-        '<div class="kv"><span class="k">현재</span><span class="v" style="font-family:var(--font-ui)">'+(role==="admin"?"관리 (선생님)":role==="record"?"기록 (오늘 확인만)":"확인 중…")+'</span></div>'+
+        '<div class="kv"><span class="k">현재</span><span class="v" style="font-family:var(--font-ui)">'+(role==="admin"?"관리 (선생님)":role==="record"?"기록 (오늘 입력만)":"확인 중…")+'</span></div>'+
         '<button class="btn wide" type="button" id="wPin">PIN 다시 입력</button></div>'+
     '</div>');
   $("wYes").onclick=function(){
@@ -1303,10 +1298,9 @@ document.addEventListener("click", function(e){
   var t=e.target.closest("[data-act]"); if(!t || t.disabled) return;
   lastAct=Date.now();
   var act=t.getAttribute("data-act");
-  if(act==="mark"){ doMark(t.getAttribute("data-slot"), t.getAttribute("data-no"), t.getAttribute("data-v")); return; }
-  if(act==="all"){ doAll(t.getAttribute("data-slot")); return; }
-  if(act==="addp"){ askAddPerson(t.getAttribute("data-slot")); return; }
-  if(act==="appick"){ closeModal(); doMark(t.getAttribute("data-slot"), t.getAttribute("data-no"), ST_IN, "순번 외"); return; }
+  if(act==="fslot"){ fSlot=t.getAttribute("data-v"); renderEntry(); return; }
+  if(act==="fpick"){ $("fStu").value=t.getAttribute("data-no"); renderEntry(); return; }
+  if(act==="fmin"){ $("fMin").value=t.getAttribute("data-v"); amMin=$("fMin").value; return; }
   if(act==="person"){ openPerson(t.getAttribute("data-no")); return; }
   if(act==="mclose"){ closeModal(); return; }
   if(act==="sclose"){ $("sheet").close(); return; }
@@ -1386,6 +1380,10 @@ $("tallySheet").addEventListener("click", function(){
 });
 
 $("autoBtn").addEventListener("click", askAuto);
+$("fGo").addEventListener("click", doSave);
+$("fStu").addEventListener("change", renderEntry);
+$("fMin").addEventListener("input", function(){ if(fSlot==="am") amMin=this.value; });
+$("fMin").addEventListener("keydown", function(e){ if(e.key==="Enter") doSave(); });
 
 $("bulk").addEventListener("input", previewBulk);
 $("bulkGo").addEventListener("click", function(){
@@ -1421,7 +1419,7 @@ $("codeCopy").addEventListener("click", function(){
 });
 $("cfgGo").addEventListener("click", function(){
   var b=this;
-  var v={am:$("cAm").value, pm:$("cPm").value, from:$("cFrom").value, to:$("cTo").value, round:cfgRound};
+  var v={pm:$("cPm").value, from:$("cFrom").value, to:$("cTo").value, round:cfgRound};
   if((v.from && !v.to) || (!v.from && v.to)){ toast("학기 시작일과 종료일을 함께 넣어 주세요."); return; }
   b.disabled=true;
   call("cfg_set", v).then(function(d){

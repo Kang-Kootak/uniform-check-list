@@ -1,7 +1,7 @@
 /**
  * 자치회 봉사 수첩 — 구글 스프레드시트 백엔드
  *
- * 학생자치회 부원이 순번대로 서는 아침 교통지도 · 점심 급식지도를 확인하고,
+ * 학생자치회 부원이 선 아침 교통지도 · 점심 급식지도를 날마다 입력하고,
  * 학기마다 봉사활동 시간을 누계합니다.
  *
  * 설치: 새 스프레드시트 → 확장 프로그램 → Apps Script → 이 파일과 Index.html 붙여넣기
@@ -12,11 +12,11 @@
 var SH_M = '부원', SH_S = '순번', SH_A = '활동', SH_C = '설정', SH_T = '누계';
 var HDR_M = ['학번', '이름', '학년', '반', '번호', '부서', '상태', '개인코드', '메모'];
 var HDR_S = ['요일', '구분', '학번', '이름'];
-var HDR_A = ['기록ID', '날짜', '구분', '학번', '이름', '인정분', '상태', '확인자', '기록일시', '메모'];
+var HDR_A = ['기록ID', '날짜', '구분', '학번', '이름', '인정분', '입력자', '입력일시', '메모'];
 var SLOT = { am: '아침 교통지도', pm: '점심 급식지도' };
 var DAYS = ['월', '화', '수', '목', '금'];
-var ST_IN = '참여', ST_OUT = '불참', ST_STOP = '중단';
-var DEF_MIN = { am: 30, pm: 30 };   // 한 번 설 때 인정하는 시간(분). 설정 시트에서 바꿉니다.
+var ST_STOP = '중단';
+var DEF_PM = 25;                    // 점심 급식지도 1회 인정 시간(분). 아침 교통지도는 입력할 때마다 넣습니다.
 var ROUNDS = ['내림', '반올림', '그대로'];
 var MAX_MIN = 600;                  // 한 번에 인정할 수 있는 최대 분
 var BULK_MAX = 500;                 // 부원 일괄 등록에서 한 번에 받는 최대 줄 수
@@ -46,7 +46,7 @@ function 초기설정() {
   ps.setColumnWidth(2, 130);
 
   var as = ensureSheet_(ss, SH_A, HDR_A);
-  as.setColumnWidth(1, 90); as.setColumnWidth(2, 100); as.setColumnWidth(3, 130); as.setColumnWidth(9, 150); as.setColumnWidth(10, 200);
+  as.setColumnWidth(1, 90); as.setColumnWidth(2, 100); as.setColumnWidth(3, 130); as.setColumnWidth(8, 150); as.setColumnWidth(9, 200);
   as.getRange(2, 2, Math.max(as.getMaxRows() - 1, 1), 1).setNumberFormat('@');   // 날짜는 2026-10-21 글자로
 
   var cs = ss.getSheetByName(SH_C) || ss.insertSheet(SH_C);
@@ -56,11 +56,10 @@ function 초기설정() {
     cs.setColumnWidth(1, 110); cs.setColumnWidth(2, 200); cs.setColumnWidth(3, 480);
     cs.setFrozenRows(1);
   }
-  addCfg_(cs, '기록PIN', '', '지도 확인을 맡은 학생(회장단)·선생님이 들어올 때 쓰는 번호. 오늘 날짜의 참여·불참만 표시할 수 있습니다.');
-  addCfg_(cs, '관리PIN', '', '담당 선생님용. 지난 날짜 수정, 순번표·부원 관리, 누계와 설정까지 모두 할 수 있습니다. 두 PIN을 모두 비워두면 주소를 아는 누구나 관리자로 들어옵니다.');
+  addCfg_(cs, '기록PIN', '', '입력을 돕는 학생(회장단)·선생님이 들어올 때 쓰는 번호. 오늘 날짜만 입력할 수 있습니다.');
+  addCfg_(cs, '관리PIN', '', '담당 선생님용. 지난 날짜 입력·수정, 부원 관리, 누계와 설정까지 모두 할 수 있습니다. 두 PIN을 모두 비워두면 주소를 아는 누구나 관리자로 들어옵니다.');
   addCfg_(cs, '학교명', '', '앱 위쪽에 표시할 이름 (선택)');
-  addCfg_(cs, '교통지도분', DEF_MIN.am, '아침 교통지도 한 번에 인정하는 시간(분)');
-  addCfg_(cs, '급식지도분', DEF_MIN.pm, '점심 급식지도 한 번에 인정하는 시간(분)');
+  addCfg_(cs, '급식지도분', DEF_PM, '점심 급식지도 한 번에 인정하는 시간(분). 아침 교통지도는 앱에서 입력할 때마다 시간을 넣습니다.');
   addCfg_(cs, '학기시작', '', '이번 학기 첫날 (예: 2026-08-17). 비워두면 1학기 3/1~8/15, 2학기 8/16~2월 말로 계산합니다.');
   addCfg_(cs, '학기종료', '', '이번 학기 마지막 날 (예: 2027-02-12)');
   addCfg_(cs, '시간계산', '내림', '누계 분을 결재용 시간으로 바꾸는 방법: 내림(5시간 50분 → 5시간) · 반올림 · 그대로(5.8시간)');
@@ -71,7 +70,7 @@ function 초기설정() {
   SpreadsheetApp.getUi().alert(
     '시트를 준비했습니다.\n\n' +
     '다음 순서로 진행하세요.\n' +
-    '1) [설정] 시트에서 기록PIN·관리PIN과 지도 한 번의 인정 시간(분)을 정합니다.\n' +
+    '1) [설정] 시트에서 기록PIN·관리PIN을 정합니다. (점심 급식지도는 1회 ' + DEF_PM + '분으로 들어가 있습니다)\n' +
     '2) 오른쪽 위 [배포] → [새 배포] → 유형 [웹 앱]\n' +
     '   · 다음 사용자로 실행: 나\n' +
     '   · 액세스 권한이 있는 사용자: 모든 사용자\n' +
@@ -132,7 +131,7 @@ function doGet(e) {
 /**
  * 주소에 실어 보낸 값을 읽는다.
  *   …/exec?c=K7HDQ2MN        부원 개인 조회 링크
- *   …/exec?pin=2026&by=김선생 PIN·확인자 이름을 다시 묻지 않게
+ *   …/exec?pin=2026&by=김선생 PIN·입력자 이름을 다시 묻지 않게
  */
 function seed_(e) {
   var p = (e && e.parameter) || {};
@@ -153,9 +152,8 @@ function api(p) {
     switch (p.op) {
       case 'rev':       return ok_({ rev: rev_() });
       case 'boot':      return ok_(who.role === 'member' ? bootMember_(who) : bootStaff_(who.role));
-      case 'mark':      return staff ? ok_(mark_(p, admin)) : deny_();
-      case 'mark_all':  return staff ? ok_(markAll_(p, admin)) : deny_();
-      case 'edit':      return admin ? ok_(editAct_(p)) : deny_();
+      case 'save':      return staff ? ok_(save_(p, admin)) : deny_();
+      case 'del':       return staff ? ok_(delAct_(p, admin)) : deny_();
       case 'sched_set': return admin ? ok_(schedSet_(p.rows || [])) : deny_();
       case 'm_bulk':    return admin ? ok_(memberBulk_(p.list || [])) : deny_();
       case 'm_state':   return admin ? ok_(memberState_(p)) : deny_();
@@ -253,14 +251,14 @@ function bootMember_(who) {
 }
 
 function packAct_(a) {
-  return { id: a.id, d: a.d, s: a.s, no: a.no, name: a.name, m: a.m, st: a.st, by: a.by, at: a.at, memo: a.memo };
+  return { id: a.id, d: a.d, s: a.s, no: a.no, name: a.name, m: a.m, by: a.by, at: a.at, memo: a.memo };
 }
 
 function cfgOut_(cfg, today) {
   var t = term_(cfg, today);
   return {
     school: String(cfg['학교명'] || '').trim(),
-    min: minutes_(cfg),
+    pm: pmMin_(cfg),
     round: roundMode_(cfg),
     from: t.from, to: t.to, termName: t.name, termSet: t.set
   };
@@ -329,12 +327,11 @@ function readActs_(ss) {
     var v = vals[i];
     var d = dstr_(v[1]), s = slotKey_(v[2]), no = normNo_(v[3]);
     if (!d || !s || !no) continue;
-    var st = String(v[6] || '').trim() === ST_OUT ? ST_OUT : ST_IN;
     out.push({
       row: i + 2, id: String(v[0] || ''), d: d, s: s, no: no,
       name: String(v[4] || '').trim(),
-      m: st === ST_OUT ? 0 : Math.max(0, num_(v[5]) || 0),
-      st: st, by: String(v[7] || ''), at: iso_(v[8]), memo: String(v[9] || '')
+      m: Math.max(0, num_(v[5]) || 0),
+      by: String(v[6] || ''), at: iso_(v[7]), memo: String(v[8] || '')
     });
   }
   return out;
@@ -352,7 +349,7 @@ function slotKey_(v) {
 
 function by_(p) {
   var v = String(p.by || '').trim().slice(0, 40);
-  if (!v) throw new Error('확인자 이름을 먼저 입력해 주세요.');
+  if (!v) throw new Error('입력자 이름을 먼저 넣어 주세요.');
   return v;
 }
 
@@ -372,15 +369,19 @@ function withLock_(fn) {
 }
 
 /**
- * 한 사람의 한 번(날짜·구분) 기록을 참여 / 불참 / 지움 으로 맞춘다.
- * 같은 날 같은 구분에는 한 줄만 남습니다. 두 사람이 동시에 눌러도 겹치지 않습니다.
+ * 그날 선 학생 한 명과 인정 시간(분)을 입력한다.
+ * 같은 날 같은 구분에 같은 학생은 한 줄만 남습니다. 다시 입력하면 시간·메모를 고칩니다.
+ * 두 사람이 동시에 입력해도 겹치지 않습니다.
  */
-function mark_(p, admin) {
+function save_(p, admin) {
   var date = dstr_(p.date), slot = String(p.slot || ''), no = normNo_(p.no);
-  var st = String(p.status || '');
-  if (st && st !== ST_IN && st !== ST_OUT) throw new Error('상태가 올바르지 않습니다.');
   checkDay_(date, slot, admin);
   var by = by_(p);
+  var mins = Math.round(Number(p.min));
+  if (String(p.min == null ? '' : p.min).trim() === '' || !isFinite(mins) || mins < 1 || mins > MAX_MIN) {
+    throw new Error('봉사 시간을 1~' + MAX_MIN + '분으로 넣어 주세요.');
+  }
+  var memo = String(p.memo == null ? '' : p.memo).trim().slice(0, 100);
   return withLock_(function () {
     var ss = ss_();
     var m = memberMap_(ss)[no];
@@ -389,69 +390,30 @@ function mark_(p, admin) {
     readActs_(ss).forEach(function (a) { if (a.d === date && a.s === slot && a.no === no) cur = a; });
     if (!m && !cur) throw new Error('부원 명단에 없는 학번입니다.');
     var name = m ? m.name : cur.name;
-    var rec = null;
-    if (!st) {
-      if (cur) sh.deleteRow(cur.row);
-    } else {
-      var mins = st === ST_OUT ? 0
-        : (cur && cur.st === ST_IN ? cur.m : minutes_(config_())[slot]);   // 선생님이 고친 분은 그대로 둔다
-      var now = new Date();
-      var memo = cur ? cur.memo : String(p.memo || '').slice(0, 100);
-      var id = cur ? cur.id : newId_();
-      var row = [id, date, SLOT[slot], no, name, mins, st, by, now, memo];
-      if (cur) sh.getRange(cur.row, 1, 1, HDR_A.length).setValues([row]);
-      else appendText_(sh, row);
-      rec = { id: id, d: date, s: slot, no: no, name: name, m: mins, st: st, by: by, at: now.toISOString(), memo: memo };
-    }
+    var now = new Date();
+    var id = cur ? cur.id : newId_();
+    var row = [id, date, SLOT[slot], no, name, mins, by, now, memo];
+    if (cur) sh.getRange(cur.row, 1, 1, HDR_A.length).setValues([row]);
+    else appendText_(sh, row);
     bumpRev_();
-    return { rec: rec, d: date, s: slot, no: no, rev: rev_() };
+    return {
+      rec: { id: id, d: date, s: slot, no: no, name: name, m: mins, by: by, at: now.toISOString(), memo: memo },
+      updated: !!cur, before: cur ? cur.m : null, rev: rev_()
+    };
   });
 }
 
-/** 순번표에 있는데 아직 표시하지 않은 사람을 한꺼번에 참여로 */
-function markAll_(p, admin) {
-  var date = dstr_(p.date), slot = String(p.slot || '');
-  checkDay_(date, slot, admin);
-  var by = by_(p);
-  var nos = (p.nos || []).map(normNo_).filter(function (x) { return x; });
-  return withLock_(function () {
-    var ss = ss_(), mem = memberMap_(ss), sh = sheet_(ss, SH_A);
-    var have = {};
-    readActs_(ss).forEach(function (a) { if (a.d === date && a.s === slot) have[a.no] = true; });
-    var mins = minutes_(config_())[slot], now = new Date(), rows = [], recs = [];
-    nos.forEach(function (no) {
-      if (have[no] || !mem[no]) return;
-      have[no] = true;
-      var id = newId_();
-      rows.push([id, date, SLOT[slot], no, mem[no].name, mins, ST_IN, by, now, '']);
-      recs.push({ id: id, d: date, s: slot, no: no, name: mem[no].name, m: mins, st: ST_IN, by: by, at: now.toISOString(), memo: '' });
-    });
-    if (rows.length) {
-      var start = sh.getLastRow() + 1;
-      sh.getRange(start, 2, rows.length, 1).setNumberFormat('@');
-      sh.getRange(start, 1, rows.length, HDR_A.length).setValues(rows);
-    }
-    bumpRev_();
-    return { recs: recs, rev: rev_() };
-  });
-}
-
-/** 선생님이 한 건의 인정 분·메모를 고친다 (행사로 단축된 날 등) */
-function editAct_(p) {
+/** 입력한 한 건을 지운다. 기록 권한은 오늘 것만 지울 수 있습니다. */
+function delAct_(p, admin) {
   var id = String(p.id || '');
-  var mins = Math.round(Number(p.min));
-  if (!isFinite(mins) || mins < 0 || mins > MAX_MIN) throw new Error('인정 시간은 0~' + MAX_MIN + '분으로 넣어 주세요.');
-  var memo = String(p.memo == null ? '' : p.memo).trim().slice(0, 100);
   return withLock_(function () {
-    var ss = ss_(), sh = sheet_(ss, SH_A), cur = null;
+    var ss = ss_(), cur = null;
     readActs_(ss).forEach(function (a) { if (a.id === id) cur = a; });
     if (!cur) throw new Error('기록을 찾지 못했습니다. 새로고침 후 다시 시도해 주세요.');
-    if (cur.st === ST_OUT) mins = 0;
-    sh.getRange(cur.row, 6).setValue(mins);
-    sh.getRange(cur.row, 10).setValue(memo);
-    cur.m = mins; cur.memo = memo;
+    checkDay_(cur.d, cur.s, admin);
+    sheet_(ss, SH_A).deleteRow(cur.row);
     bumpRev_();
-    return { rec: packAct_(cur), rev: rev_() };
+    return { id: id, rev: rev_() };
   });
 }
 
@@ -605,15 +567,14 @@ function newCode_() {
 /* ─────────────────────────── 설정 ─────────────────────────── */
 
 function cfgSet_(p) {
-  var am = Math.round(Number(p.am)), pm = Math.round(Number(p.pm));
-  if (!(am > 0 && am <= MAX_MIN) || !(pm > 0 && pm <= MAX_MIN)) throw new Error('인정 시간은 1~' + MAX_MIN + '분으로 넣어 주세요.');
+  var pm = Math.round(Number(p.pm));
+  if (!(pm > 0 && pm <= MAX_MIN)) throw new Error('점심 급식지도 시간은 1~' + MAX_MIN + '분으로 넣어 주세요.');
   var from = dstr_(p.from), to = dstr_(p.to);
   if ((from && !to) || (!from && to)) throw new Error('학기 시작일과 종료일을 함께 넣어 주세요. (둘 다 비우면 자동으로 계산합니다)');
   if (from && from > to) throw new Error('학기 종료일이 시작일보다 빠릅니다.');
   var round = ROUNDS.indexOf(String(p.round)) >= 0 ? String(p.round) : '내림';
   return withLock_(function () {
     var cs = sheet_(ss_(), SH_C);
-    setCfg_(cs, '교통지도분', am);
     setCfg_(cs, '급식지도분', pm);
     setCfg_(cs, '학기시작', from);
     setCfg_(cs, '학기종료', to);
@@ -624,9 +585,10 @@ function cfgSet_(p) {
   });
 }
 
-function minutes_(cfg) {
-  var f = function (v, d) { var n = Math.round(Number(v)); return n > 0 && n <= MAX_MIN ? n : d; };
-  return { am: f(cfg['교통지도분'], DEF_MIN.am), pm: f(cfg['급식지도분'], DEF_MIN.pm) };
+/** 점심 급식지도 1회 인정 시간(분) */
+function pmMin_(cfg) {
+  var n = Math.round(Number(cfg['급식지도분']));
+  return n > 0 && n <= MAX_MIN ? n : DEF_PM;
 }
 
 function roundMode_(cfg) {
@@ -678,41 +640,40 @@ function writeTally_(from, to, title) {
   var ss = ss_(), cfg = config_(), mode = roundMode_(cfg);
   var by = {};
   readMembers_(ss).forEach(function (m) {
-    by[m.no] = { no: m.no, name: m.name, dept: m.dept, am: 0, pm: 0, out: 0, min: 0, keep: m.state !== ST_STOP };
+    by[m.no] = { no: m.no, name: m.name, dept: m.dept, am: 0, pm: 0, min: 0, keep: m.state !== ST_STOP };
   });
   readActs_(ss).forEach(function (a) {
     if (a.d < from || a.d > to) return;
-    var t = by[a.no] || (by[a.no] = { no: a.no, name: a.name, dept: '', am: 0, pm: 0, out: 0, min: 0, keep: false });
-    if (a.st === ST_OUT) { t.out++; return; }
+    var t = by[a.no] || (by[a.no] = { no: a.no, name: a.name, dept: '', am: 0, pm: 0, min: 0, keep: false });
     t[a.s]++;
     t.min += a.m;
   });
   var list = Object.keys(by).map(function (k) { return by[k]; })
-    .filter(function (t) { return t.keep || t.am || t.pm || t.out; })
+    .filter(function (t) { return t.keep || t.am || t.pm; })
     .sort(function (a, b) { return cmpNo_(a.no, b.no); });
 
   var sh = ss.getSheetByName(SH_T) || ss.insertSheet(SH_T);
   sh.clear();
-  var head = ['학번', '이름', '부서', '교통지도(회)', '급식지도(회)', '불참(회)', '인정 분', '시간 환산', '인정 시간'];
+  var head = ['학번', '이름', '부서', '교통지도(회)', '급식지도(회)', '인정 분', '시간 환산', '인정 시간'];
   var school = String(cfg['학교명'] || '').trim();
   sh.getRange(1, 1).setValue((school ? school + ' ' : '') + (title || termName_(from)) + ' 학생자치회 지도 봉사활동 누계');
-  sh.getRange(2, 1).setValue('기간 ' + from + ' ~ ' + to + '  ·  아침 교통지도 1회 ' + minutes_(cfg).am + '분, 점심 급식지도 1회 ' + minutes_(cfg).pm + '분  ·  시간 계산: ' + mode +
+  sh.getRange(2, 1).setValue('기간 ' + from + ' ~ ' + to + '  ·  점심 급식지도 1회 ' + pmMin_(cfg) + '분, 아침 교통지도는 날마다 입력한 시간  ·  시간 계산: ' + mode +
     '  ·  만든 때 ' + Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'));
   sh.getRange(1, 1).setFontWeight('bold').setFontSize(13);
   sh.getRange(2, 1).setFontColor('#6a7589');
   sh.getRange(4, 1, 1, head.length).setValues([head]).setFontWeight('bold').setBackground('#e2ecf6');
   if (list.length) {
     var rows = list.map(function (t) {
-      return [t.no, t.name, t.dept, t.am, t.pm, t.out, t.min, hm_(t.min), credit_(t.min, mode)];
+      return [t.no, t.name, t.dept, t.am, t.pm, t.min, hm_(t.min), credit_(t.min, mode)];
     });
     sh.getRange(5, 1, rows.length, head.length).setValues(rows);
-    var sum = rows.reduce(function (s, r) { s[0] += r[3]; s[1] += r[4]; s[2] += r[5]; s[3] += r[6]; return s; }, [0, 0, 0, 0]);
+    var sum = rows.reduce(function (s, r) { s[0] += r[3]; s[1] += r[4]; s[2] += r[5]; return s; }, [0, 0, 0]);
     sh.getRange(5 + rows.length, 1, 1, head.length)
-      .setValues([['합계', list.length + '명', '', sum[0], sum[1], sum[2], sum[3], hm_(sum[3]), '']])
+      .setValues([['합계', list.length + '명', '', sum[0], sum[1], sum[2], hm_(sum[2]), '']])
       .setFontWeight('bold').setBorder(true, null, null, null, null, null);
   }
   sh.setFrozenRows(4);
-  sh.setColumnWidth(2, 100); sh.setColumnWidth(3, 110); sh.setColumnWidth(8, 110);
+  sh.setColumnWidth(2, 100); sh.setColumnWidth(3, 110); sh.setColumnWidth(7, 110);
   return { sheet: sh, rows: list.length };
 }
 
