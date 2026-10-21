@@ -19,6 +19,7 @@ var ST_STOP = '중단';
 var DEF_PM = 25;                    // 점심 급식지도 1회 인정 시간(분). 아침 교통지도는 입력할 때마다 넣습니다.
 var ROUNDS = ['내림', '반올림', '그대로'];
 var MAX_MIN = 600;                  // 한 번에 인정할 수 있는 최대 분
+var AM_STEP = 5;                    // 아침 교통지도 시간은 5분 단위로 입력합니다
 var BULK_MAX = 500;                 // 부원 일괄 등록에서 한 번에 받는 최대 줄 수
 var CFG_TTL = 30;                   // 설정 캐시 (초). PIN을 바꾸면 최대 이만큼 뒤에 적용됩니다.
 
@@ -56,8 +57,7 @@ function 초기설정() {
     cs.setColumnWidth(1, 110); cs.setColumnWidth(2, 200); cs.setColumnWidth(3, 480);
     cs.setFrozenRows(1);
   }
-  addCfg_(cs, '기록PIN', '', '입력을 돕는 학생(회장단)·선생님이 들어올 때 쓰는 번호. 오늘 날짜만 입력할 수 있습니다.');
-  addCfg_(cs, '관리PIN', '', '담당 선생님용. 지난 날짜 입력·수정, 부원 관리, 누계와 설정까지 모두 할 수 있습니다. 두 PIN을 모두 비워두면 주소를 아는 누구나 관리자로 들어옵니다.');
+  addCfg_(cs, '관리PIN', '', '담당 선생님만 아는 번호. 봉사시간 입력·수정은 이 번호로 들어온 선생님만 할 수 있습니다. 비워두면 앱이 열리지 않습니다.');
   addCfg_(cs, '학교명', '', '앱 위쪽에 표시할 이름 (선택)');
   addCfg_(cs, '급식지도분', DEF_PM, '점심 급식지도 한 번에 인정하는 시간(분). 아침 교통지도는 앱에서 입력할 때마다 시간을 넣습니다.');
   addCfg_(cs, '학기시작', '', '이번 학기 첫날 (예: 2026-08-17). 비워두면 1학기 3/1~8/15, 2학기 8/16~2월 말로 계산합니다.');
@@ -70,7 +70,7 @@ function 초기설정() {
   SpreadsheetApp.getUi().alert(
     '시트를 준비했습니다.\n\n' +
     '다음 순서로 진행하세요.\n' +
-    '1) [설정] 시트에서 기록PIN·관리PIN을 정합니다. (점심 급식지도는 1회 ' + DEF_PM + '분으로 들어가 있습니다)\n' +
+    '1) [설정] 시트에서 관리PIN을 정합니다. 선생님만 아는 번호로 하세요. (점심 급식지도는 1회 ' + DEF_PM + '분으로 들어가 있습니다)\n' +
     '2) 오른쪽 위 [배포] → [새 배포] → 유형 [웹 앱]\n' +
     '   · 다음 사용자로 실행: 나\n' +
     '   · 액세스 권한이 있는 사용자: 모든 사용자\n' +
@@ -99,7 +99,7 @@ function 앱주소보기() {
     ui.alert('아직 배포되지 않았습니다.\n\n오른쪽 위 [배포] → [새 배포] → 유형 [웹 앱]으로 먼저 배포해 주세요.');
     return;
   }
-  ui.alert('앱 주소\n\n' + url + '\n\n선생님·회장단은 이 주소와 PIN으로 들어옵니다.\n부원 개인 조회 링크는 앱의 [관리] 탭에서 만듭니다.');
+  ui.alert('앱 주소\n\n' + url + '\n\n담당 선생님은 이 주소와 관리PIN으로 들어옵니다.\n부원 개인 조회 링크(보기 전용)는 앱의 [관리] 탭에서 만듭니다.');
 }
 
 function 학기누계() {
@@ -146,14 +146,17 @@ function api(p) {
   p = p || {};
   try {
     var who = identify_(p);
-    if (!who) return { ok: false, err: String(p.code || '').trim() ? 'CODE' : 'PIN' };
+    if (!who) {
+      if (String(p.code || '').trim()) return { ok: false, err: 'CODE' };
+      return { ok: false, err: pinSet_() ? 'PIN' : 'NOPIN' };
+    }
+    // 입력·수정은 관리PIN으로 들어온 선생님만. 부원 링크는 자기 기록 보기만 됩니다.
     var admin = who.role === 'admin';
-    var staff = admin || who.role === 'record';
     switch (p.op) {
       case 'rev':       return ok_({ rev: rev_() });
-      case 'boot':      return ok_(who.role === 'member' ? bootMember_(who) : bootStaff_(who.role));
-      case 'save':      return staff ? ok_(save_(p, admin)) : deny_();
-      case 'del':       return staff ? ok_(delAct_(p, admin)) : deny_();
+      case 'boot':      return ok_(admin ? bootAdmin_() : bootMember_(who));
+      case 'save':      return admin ? ok_(save_(p)) : deny_();
+      case 'del':       return admin ? ok_(delAct_(p)) : deny_();
       case 'sched_set': return admin ? ok_(schedSet_(p.rows || [])) : deny_();
       case 'm_bulk':    return admin ? ok_(memberBulk_(p.list || [])) : deny_();
       case 'm_state':   return admin ? ok_(memberState_(p)) : deny_();
@@ -170,12 +173,12 @@ function api(p) {
 }
 
 function ok_(data) { return { ok: true, data: data }; }
-function deny_() { return { ok: false, err: 'ROLE', message: '관리 PIN이 필요한 기능입니다.' }; }
+function deny_() { return { ok: false, err: 'ROLE', message: '담당 선생님(관리 PIN)만 할 수 있습니다.' }; }
 
 /**
  * 누가 들어왔는지
  *  · 개인코드(?c=…) 가 부원 시트에 있으면 → 그 부원 본인 (자기 기록만 봅니다)
- *  · 아니면 PIN 으로 → 관리 / 기록
+ *  · 아니면 관리PIN 이 맞으면 → 담당 선생님
  */
 function identify_(p) {
   var code = String(p.code || '').trim().toUpperCase();
@@ -190,46 +193,36 @@ function identify_(p) {
 }
 
 /**
- * PIN 규칙
- *  · 둘 다 비어 있으면  → 누구나 관리자 (초기 상태, 앱이 경고를 띄웁니다)
- *  · 관리PIN 일치       → 관리자
- *  · 기록PIN 일치       → 관리PIN이 있으면 기록 권한, 없으면 관리자
- *  · 그 외              → 거부
+ * PIN 규칙 — 생활기록부에 올라갈 시간이라 담당 선생님만 들어옵니다.
+ *  · 관리PIN 일치          → 담당 선생님
+ *  · 관리PIN 이 비어 있으면 → 아무도 못 들어옵니다 (설정 시트에서 먼저 정해야 합니다)
  */
 function auth_(pin) {
-  var cfg = config_();
-  var rec = String(cfg['기록PIN'] || '').trim();
-  var adm = String(cfg['관리PIN'] || '').trim();
+  var adm = String(config_()['관리PIN'] || '').trim();
   pin = String(pin == null ? '' : pin).trim();
-  if (!rec && !adm) return 'admin';
-  if (adm && pin === adm) return 'admin';
-  if (rec && pin === rec) return adm ? 'record' : 'admin';
-  return null;
+  return adm && pin === adm ? 'admin' : null;
 }
+
+function pinSet_() { return !!String(config_()['관리PIN'] || '').trim(); }
 
 /* ─────────────────────────── 읽기 ─────────────────────────── */
 
-function bootStaff_(role) {
+function bootAdmin_() {
   var ss = ss_(), cfg = config_(), today = today_();
-  var admin = role === 'admin';
   var members = readMembers_(ss).map(function (m) {
     return { no: m.no, name: m.name, grade: m.grade, klass: m.klass, num: m.num, dept: m.dept,
-             state: m.state, code: admin ? m.code : '', memo: admin ? m.memo : '' };
+             state: m.state, code: m.code, memo: m.memo };
   });
-  var acts = readActs_(ss);
-  // 기록 권한은 오늘만 다루므로 오늘 기록만 내려준다
-  if (!admin) acts = acts.filter(function (a) { return a.d === today; });
   return {
-    role: role,
+    role: 'admin',
     members: members,
     sched: readSched_(ss),
-    acts: acts.map(packAct_),
+    acts: readActs_(ss).map(packAct_),
     cfg: cfgOut_(cfg, today),
     today: today,
-    pinSet: !!(String(cfg['기록PIN'] || '').trim() || String(cfg['관리PIN'] || '').trim()),
-    sheetUrl: admin ? ss.getUrl() : '',
-    appUrl: admin ? appUrl_() : '',
-    pins: admin ? { rec: String(cfg['기록PIN'] || '').trim(), adm: String(cfg['관리PIN'] || '').trim() } : null,
+    sheetUrl: ss.getUrl(),
+    appUrl: appUrl_(),
+    pin: String(cfg['관리PIN'] || '').trim(),
     rev: rev_()
   };
 }
@@ -353,13 +346,12 @@ function by_(p) {
   return v;
 }
 
-/** 기록 권한은 오늘만, 관리자는 오늘까지의 모든 날짜 */
-function checkDay_(date, slot, admin) {
+/** 오늘까지의 날짜만 입력합니다 */
+function checkDay_(date, slot) {
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('날짜가 올바르지 않습니다.');
   if (!SLOT[slot]) throw new Error('구분(아침/점심)이 올바르지 않습니다.');
   var today = today_();
   if (date > today) throw new Error('아직 오지 않은 날짜는 기록할 수 없습니다.');
-  if (!admin && date !== today) throw new Error('지난 날짜는 담당 선생님(관리 PIN)만 고칠 수 있습니다.');
 }
 
 function withLock_(fn) {
@@ -373,14 +365,15 @@ function withLock_(fn) {
  * 같은 날 같은 구분에 같은 학생은 한 줄만 남습니다. 다시 입력하면 시간·메모를 고칩니다.
  * 두 사람이 동시에 입력해도 겹치지 않습니다.
  */
-function save_(p, admin) {
+function save_(p) {
   var date = dstr_(p.date), slot = String(p.slot || ''), no = normNo_(p.no);
-  checkDay_(date, slot, admin);
+  checkDay_(date, slot);
   var by = by_(p);
   var mins = Math.round(Number(p.min));
   if (String(p.min == null ? '' : p.min).trim() === '' || !isFinite(mins) || mins < 1 || mins > MAX_MIN) {
     throw new Error('봉사 시간을 1~' + MAX_MIN + '분으로 넣어 주세요.');
   }
+  if (slot === 'am' && mins % AM_STEP) throw new Error('아침 교통지도 시간은 ' + AM_STEP + '분 단위로 넣어 주세요.');
   var memo = String(p.memo == null ? '' : p.memo).trim().slice(0, 100);
   return withLock_(function () {
     var ss = ss_();
@@ -403,14 +396,13 @@ function save_(p, admin) {
   });
 }
 
-/** 입력한 한 건을 지운다. 기록 권한은 오늘 것만 지울 수 있습니다. */
-function delAct_(p, admin) {
+/** 입력한 한 건을 지운다 */
+function delAct_(p) {
   var id = String(p.id || '');
   return withLock_(function () {
     var ss = ss_(), cur = null;
     readActs_(ss).forEach(function (a) { if (a.id === id) cur = a; });
     if (!cur) throw new Error('기록을 찾지 못했습니다. 새로고침 후 다시 시도해 주세요.');
-    checkDay_(cur.d, cur.s, admin);
     sheet_(ss, SH_A).deleteRow(cur.row);
     bumpRev_();
     return { id: id, rev: rev_() };

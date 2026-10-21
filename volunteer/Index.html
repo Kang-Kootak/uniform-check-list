@@ -195,8 +195,7 @@ select.inp{background-image:linear-gradient(45deg,transparent 50%,var(--muted) 5
 .minrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .minrow .inp{width:120px;font-family:var(--font-mono);font-size:18px;font-weight:600;text-align:right}
 .minrow span{font-size:14px;color:var(--muted)}
-.minrow .chips{margin-left:auto;flex-wrap:nowrap;gap:6px}
-.minrow .chip{padding:7px 10px;font-size:12.5px}
+.minrow select.inp{width:190px;text-align:left;font-family:var(--font-ui);font-size:16px}
 .picks .chip{padding:6px 11px;font-size:12.5px}
 #entry.locked{opacity:.55;pointer-events:none}
 
@@ -347,7 +346,6 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
   <main>
     <!-- 입력: 그날 봉사한 학생과 시간 -->
     <section class="view" id="view-today">
-      <div class="banner" id="pinWarn" hidden><span><b>PIN이 설정되지 않았습니다.</b> 주소를 아는 누구나 관리자로 들어옵니다. 스프레드시트의 <b>설정</b> 시트에서 기록PIN·관리PIN을 정해 주세요.</span></div>
       <div class="datebar">
         <button class="navb" id="dPrev" type="button" aria-label="이전 날">‹</button>
         <div class="lbl"><b id="dLabel">-</b><span id="dSub">&nbsp;</span></div>
@@ -362,7 +360,7 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
           <select class="inp" id="fStu"></select>
           <div class="chips picks" id="fPlan" hidden></div></div>
         <div><label class="fl" for="fMin" id="fMinLbl">봉사 시간</label>
-          <div class="minrow"><input class="inp" id="fMin" type="number" inputmode="numeric" min="1" max="600" placeholder="분"><span>분</span><div class="chips" id="fMinChips"></div></div>
+          <div class="minrow"><select class="inp" id="fMinSel" hidden></select><input class="inp" id="fMin" type="number" inputmode="numeric" min="1" max="600" placeholder="분"><span id="fMinUnit">분</span></div>
           <p class="note" id="fMinNote" style="margin-top:6px"></p></div>
         <button class="btn primary wide" id="fGo" type="button">입력</button>
       </div>
@@ -503,12 +501,13 @@ var ST_STOP="중단";
 var ROUNDS=[["내림","내림"],["반올림","반올림"],["그대로","소수 그대로"]];
 var THEMES=[["light","밝게"],["dark","어둡게"]];
 var LS_AM="jachi.am", LS_CACHE="jachi.cache.v2", LS_ME="jachi.me", LS_PIN="jachi.pin", LS_THEME="jachi.theme", LS_CODE="jachi.code";
+var AM_STEP=5, AM_MAX=120;   // 아침 교통지도는 5분 단위
 var POLL_MS=20000, IDLE_MS=15*60*1000;
 
 /* ============ 상태 ============ */
 var members=new Map(), sched=[], acts=[];
 var CFG={school:"", pm:25, round:"내림", from:"", to:"", termName:"", termSet:false};
-var role=null, pinSet=true, sheetUrl="", appUrl="", PINS=null, rev=0, booted=false, meInfo=null;
+var role=null, sheetUrl="", appUrl="", PIN="", rev=0, booted=false, meInfo=null;
 var tab="today", day=null, fSlot=new Date().getHours()<11?"am":"pm", amMin=lsGet(LS_AM,""), period="term", sortBy="no", rFrom="", rTo="", meAll=false;
 var busy=new Set(), inflight=0, lastAct=Date.now(), nameLock=false;
 
@@ -588,6 +587,7 @@ function call(op, extra){
         if(r && r.ok){ res(r.data); return; }
         if(r && r.err==="PIN") askPin(!!getPin());
         if(r && r.err==="CODE") codeGone();
+        if(r && r.err==="NOPIN") noPin();
         rej(r||{err:"ERR"});
       })
       .withFailureHandler(function(e){
@@ -605,6 +605,7 @@ function errMsg(e){
   if(!e) return "요청을 처리하지 못했습니다.";
   if(e.err==="PIN") return "PIN이 맞지 않습니다.";
   if(e.err==="CODE") return "이 링크는 더 이상 쓰지 않습니다.";
+  if(e.err==="NOPIN") return "관리 PIN이 아직 정해지지 않았습니다.";
   if(e.err==="ROLE") return "관리 PIN이 필요한 기능입니다.";
   if(e.err==="NET") return "인터넷 연결을 확인하고 다시 시도해 주세요.";
   return e.message || "요청을 처리하지 못했습니다.";
@@ -621,7 +622,7 @@ function applyBoot(d){
     members=new Map();
   } else {
     meInfo=null;
-    pinSet=d.pinSet; sheetUrl=d.sheetUrl||""; appUrl=d.appUrl||""; PINS=d.pins||null;
+    sheetUrl=d.sheetUrl||""; appUrl=d.appUrl||""; PIN=d.pin||"";
     members=new Map();
     (d.members||[]).forEach(function(m){ members.set(m.no, m); });
   }
@@ -643,21 +644,18 @@ function loadCache(){
 }
 function refresh(silent){
   return call("boot").then(applyBoot, function(e){
-    if(!silent && e.err!=="PIN" && e.err!=="CODE") toast(errMsg(e));
+    if(!silent && e.err!=="PIN" && e.err!=="CODE" && e.err!=="NOPIN") toast(errMsg(e));
   });
 }
 function applyRole(){
   var admin=role==="admin", member=role==="member";
   Array.prototype.forEach.call(document.querySelectorAll("[data-admin]"), function(el){ el.hidden=!admin; });
-  // 기록 권한(회장단)은 오늘·순번만, 부원 본인은 자기 화면만
-  $("tabbar").hidden = member || !role;
+  // 입력은 담당 선생님만, 부원 본인은 자기 화면 보기만
+  $("tabbar").hidden = !admin;
   $("shell").classList.toggle("solo", member);
   $("whoBtn").hidden = member;
-  document.querySelector('.tab[data-tab="tally"]').hidden = !admin;
-  document.querySelector('.tab[data-tab="admin"]').hidden = !admin;
   if(member) setView("me");
-  else { if(!admin && (tab==="tally"||tab==="admin")) tab="today"; if(tab==="me") tab="today"; setView(tab); }
-  $("pinWarn").hidden = !admin || pinSet;
+  else { if(tab==="me") tab="today"; setView(tab); }
 }
 
 /* ============ 렌더 ============ */
@@ -671,8 +669,6 @@ function renderNow(){
   var d=new Date();
   $("nowline").textContent = d.getFullYear()+". "+(d.getMonth()+1)+". "+d.getDate()+". ("+WD[d.getDay()]+")  "+pad2(d.getHours())+":"+pad2(d.getMinutes())+
     (CFG.termName ? "  ·  "+CFG.termName : "");
-  // 자정을 넘기면 오늘 화면도 새 날짜로
-  if(day && day!==todayKey() && role==="record"){ day=todayKey(); renderToday(); }
 }
 function renderWho(){
   var n=me(), b=$("whoBtn");
@@ -682,10 +678,7 @@ function renderWho(){
 }
 
 /* ---------- 입력 ---------- */
-function canMark(k){
-  if(role==="admin") return k<=todayKey();
-  return role==="record" && k===todayKey();
-}
+function canMark(k){ return role==="admin" && k<=todayKey(); }
 function actOf(k, slot, no){
   for(var i=0;i<acts.length;i++){ var a=acts[i]; if(a.d===k && a.s===slot && a.no===no) return a; }
   return null;
@@ -696,10 +689,17 @@ function assigned(wd, slot){
 }
 /** 아침 교통지도 시간 — 이번에 넣은 값, 없으면 그날(또는 가장 최근) 아침 입력에서 가져온다 */
 function guessAm(){
-  if(amMin) return amMin;
+  var ok=function(v){ v=Number(v); return v>=AM_STEP && v<=AM_MAX && v%AM_STEP===0; };
+  if(ok(amMin)) return String(amMin);
   var best=null;
   acts.forEach(function(a){ if(a.s==="am" && (!best || a.d>best.d || (a.d===best.d && (a.at||"")>(best.at||"")))) best=a; });
-  return best ? String(best.m) : "";
+  return best && ok(best.m) ? String(best.m) : "";
+}
+/** 아침 교통지도 시간 드롭다운 — 5분, 10분 … 2시간 */
+function amOptions(first){
+  var out=first ? '<option value="">'+first+'</option>' : "";
+  for(var n=AM_STEP;n<=AM_MAX;n+=AM_STEP) out+='<option value="'+n+'">'+(n%60===0 ? (n/60)+"시간 ("+n+"분)" : n>60 ? hm(n)+" ("+n+"분)" : n+"분")+'</option>';
+  return out;
 }
 function renderToday(){
   if(!day) day=todayKey();
@@ -738,17 +738,18 @@ function renderEntry(){
   box.innerHTML = plan.length ? '<span class="note" style="align-self:center">순번</span>'+plan.map(function(no){
     return '<button class="chip" type="button" data-act="fpick" data-no="'+esc(no)+'" aria-pressed="'+(sel.value===no)+'">'+esc(memName(no))+'</button>';
   }).join("") : "";
-  // 시간 — 점심은 설정값, 아침은 선생님이 넣는 값
-  var inp=$("fMin");
-  if(document.activeElement!==inp) inp.value = fSlot==="pm" ? (inp.dataset.slot==="pm" && inp.value ? inp.value : CFG.pm) : guessAm();
-  inp.dataset.slot=fSlot;
-  $("fMinLbl").textContent = fSlot==="pm" ? "봉사 시간 (점심 급식지도)" : "봉사 시간 (아침 교통지도)";
-  $("fMinChips").innerHTML = fSlot==="am" ? [20,30,40,50].map(function(n){
-    return '<button class="chip" type="button" data-act="fmin" data-v="'+n+'">'+n+'</button>';
-  }).join("") : "";
-  $("fMinNote").innerHTML = fSlot==="pm"
-    ? "점심 급식지도는 1회 <b>"+CFG.pm+"분</b>으로 정해져 있습니다. (관리 탭에서 바꿉니다)"
-    : "그날 교통지도 시간을 넣어 주세요. 넣은 시간은 다음 학생에게도 그대로 남습니다.";
+  // 시간 — 점심은 설정값(숫자 칸), 아침은 선생님이 5분 단위로 고르는 드롭다운
+  var am=fSlot==="am", inp=$("fMin"), msel=$("fMinSel");
+  inp.hidden=am; $("fMinUnit").hidden=am; msel.hidden=!am;
+  if(am){
+    if(!msel.options.length) msel.innerHTML=amOptions("시간을 고르세요");
+    if(document.activeElement!==msel) msel.value=guessAm();
+  } else if(document.activeElement!==inp && !inp.value) inp.value=CFG.pm;
+  $("fMinLbl").textContent = am ? "봉사 시간 (아침 교통지도)" : "봉사 시간 (점심 급식지도)";
+  $("fMinLbl").setAttribute("for", am ? "fMinSel" : "fMin");
+  $("fMinNote").innerHTML = am
+    ? "그날 교통지도 시간을 <b>5분 단위</b>로 고르세요. 고른 시간은 다음 학생에게도 그대로 남습니다."
+    : "점심 급식지도는 1회 <b>"+CFG.pm+"분</b>으로 정해져 있습니다. (관리 탭에서 바꿉니다)";
 }
 function renderDayList(){
   var mine=acts.filter(function(a){ return a.d===day; });
@@ -779,14 +780,16 @@ function requireName(){
 }
 /** 학생 한 명 입력 — 같은 날 같은 구분에 이미 있으면 시간만 고칩니다 */
 function doSave(){
-  var k=day, slot=fSlot, no=$("fStu").value, mins=Math.round(Number($("fMin").value));
+  var k=day, slot=fSlot, no=$("fStu").value, field=slot==="am" ? $("fMinSel") : $("fMin"), mins=Math.round(Number(field.value));
   if(!canMark(k)) return;
   if(!requireName()) return;
   if(!no){ toast("학생을 골라 주세요."); $("fStu").focus(); return; }
-  if(!$("fMin").value || !(mins>=1 && mins<=600)){ toast("봉사 시간을 1~600분으로 넣어 주세요."); $("fMin").focus(); return; }
+  if(slot==="am" && !field.value){ toast("교통지도 시간을 골라 주세요."); field.focus(); return; }
+  if(!field.value || !(mins>=1 && mins<=600)){ toast("봉사 시간을 1~600분으로 넣어 주세요."); field.focus(); return; }
   var key=k+slot+no;
   if(busy.has(key)) return;
   if(slot==="am"){ amMin=String(mins); lsSet(LS_AM, amMin); }
+  else $("fMin").value=CFG.pm;   // 점심은 다음 학생에게 다시 정해진 시간으로
   var cur=actOf(k, slot, no), prev=cur ? JSON.parse(JSON.stringify(cur)) : null;
   var tmp={id:rid(), d:k, s:slot, no:no, name:memName(no), m:mins, by:me(), at:new Date().toISOString(), memo:cur?cur.memo:"", pending:true};
   acts=acts.filter(function(a){ return a!==cur; }).concat([tmp]);
@@ -996,9 +999,8 @@ function renderAdmin(){
   var c=$("accessCard");
   c.innerHTML =
     '<div class="kv"><span class="k">앱 주소</span><span class="v" style="font-size:12px">'+esc(appUrl||"배포 후 표시됩니다")+'</span></div>'+
-    '<div class="kv"><span class="k">기록 PIN · 회장단</span><span class="v">'+esc(PINS&&PINS.rec||"없음")+'</span></div>'+
-    '<div class="kv"><span class="k">관리 PIN · 선생님</span><span class="v">'+esc(PINS&&PINS.adm||"없음")+'</span></div>'+
-    '<p class="note" style="margin-top:8px"><b>기록 PIN</b>으로 들어오면 오늘 날짜 입력과 순번표 보기만 됩니다. PIN은 스프레드시트 <b>설정</b> 시트에서 바꿉니다.</p>';
+    '<div class="kv"><span class="k">관리 PIN</span><span class="v">'+esc(PIN||"없음")+'</span></div>'+
+    '<p class="note" style="margin-top:8px">생활기록부에 올라갈 시간이라 <b>관리 PIN을 아는 선생님만</b> 입력·수정할 수 있습니다. 학생에게는 PIN을 알려주지 마세요. PIN은 스프레드시트 <b>설정</b> 시트에서 바꿉니다.</p>';
   if(sheetUrl) $("sheetLink").href=sheetUrl;
 
   var all=Array.from(members.values()).sort(function(a,b){ return cmpNo(a.no,b.no); });
@@ -1110,11 +1112,14 @@ function askFix(id){
   modal('<div class="sheet-h"><div><h3>기록 고치기</h3><div class="sm">'+esc(memName(a.no,a.name))+' · '+esc(fmtDay(a.d))+' · '+SLOT_NAME[a.s]+'</div></div>'+
       '<button class="close" type="button" data-act="mclose" aria-label="닫기">✕</button></div>'+
     '<div class="sheet-b">'+
-      '<div><label class="fl" for="fxMin">봉사 시간 (분)</label><input class="inp" id="fxMin" type="number" inputmode="numeric" min="1" max="600" value="'+a.m+'"></div>'+
+      (a.s==="am"
+        ? '<div><label class="fl" for="fxMin">봉사 시간 (5분 단위)</label><select class="inp" id="fxMin">'+amOptions("")+'</select></div>'
+        : '<div><label class="fl" for="fxMin">봉사 시간 (분)</label><input class="inp" id="fxMin" type="number" inputmode="numeric" min="1" max="600" value="'+a.m+'"></div>')+
       '<div><label class="fl" for="fxMemo">메모</label><input class="inp" id="fxMemo" maxlength="100" value="'+esc(a.memo)+'" placeholder="예: 시험 기간 단축, 대신 섬"></div>'+
       '<button class="btn primary wide" type="button" id="fxGo">저장</button>'+
       '<button class="btn danger wide" type="button" id="fxDel">이 기록 지우기</button>'+
     '</div>');
+  if(a.s==="am") $("fxMin").value=String(a.m);
   function after(){ closeModal(); renderToday(); if(role==="admin"){ renderTally(); } if($("sheet").open) drawPerson(); }
   $("fxGo").onclick=function(){
     var mins=Math.round(Number($("fxMin").value));
@@ -1169,14 +1174,22 @@ function renderMe(){
       return '<li><span class="d">'+esc(fmtMD(a.d))+'</span><span class="r">'+SLOT_NAME[a.s]+(a.memo?'<small>'+esc(a.memo)+'</small>':'')+'</span>'+
         '<span class="m">'+esc(hm(a.m))+'</span></li>';
     }).join("")+'</ul></div>' : '<div class="card"><div class="empty">아직 남은 기록이 없습니다.</div></div>')+
-    '<p class="note">기록은 담당 선생님·회장단이 입력한 것만 남습니다. 빠지거나 틀린 기록이 있으면 담당 선생님께 말씀드려 주세요.</p>'+
+    '<p class="note">기록은 담당 선생님이 입력한 것만 남습니다. 빠지거나 틀린 기록이 있으면 담당 선생님께 말씀드려 주세요.</p>'+
     '<p class="note"><button class="btn sm" type="button" data-act="melogout">이 휴대폰에서 링크 지우기</button></p>';
+}
+function noPin(){
+  var d=$("lock");
+  $("lockIn").innerHTML='<div class="sheet-h"><div><h3>관리 PIN을 먼저 정해 주세요</h3></div></div>'+
+    '<div class="sheet-b"><p class="note">스프레드시트의 <b>설정</b> 시트 <b>관리PIN</b> 칸에 선생님만 아는 번호를 넣은 뒤, 30초쯤 지나 이 화면을 새로고침해 주세요.</p>'+
+    '<button class="btn primary wide" type="button" id="npRe">다시 확인</button></div>';
+  if(!d.open) d.showModal();
+  $("npRe").onclick=function(){ call("boot").then(function(data){ d.close(); applyBoot(data); askPin(false); }, function(){}); };
 }
 function codeGone(){
   var d=$("lock");
   $("lockIn").innerHTML='<div class="sheet-h"><div><h3>링크를 다시 받아 주세요</h3></div></div>'+
     '<div class="sheet-b"><p class="note">이 개인 조회 링크는 더 이상 쓰지 않습니다. 담당 선생님께 <b>새 링크</b>를 받아 열어 주세요.</p>'+
-    '<button class="btn wide" type="button" id="cgPin">선생님·회장단 PIN으로 들어가기</button></div>';
+    '<button class="btn wide" type="button" id="cgPin">선생님 PIN으로 들어가기</button></div>';
   if(!d.open) d.showModal();
   $("cgPin").onclick=function(){ lsDel(LS_CODE); SEED.code=""; d.close(); askPin(false); };
 }
@@ -1205,12 +1218,12 @@ function askWho(){
   modal('<div class="sheet-h"><div><h3>내 설정</h3><div class="sm">이 휴대폰에만 저장됩니다</div></div>'+
       '<button class="close" type="button" data-act="mclose" aria-label="닫기">✕</button></div>'+
     '<div class="sheet-b">'+
-      '<div class="block"><h4>입력자 이름</h4><input class="inp" id="whoIn" maxlength="40" value="'+esc(me())+'" placeholder="예: 김선생 / 회장 이도현">'+
+      '<div class="block"><h4>입력자 이름</h4><input class="inp" id="whoIn" maxlength="40" value="'+esc(me())+'" placeholder="예: 김선생">'+
         '<button class="btn primary wide" type="button" id="wYes">이름 저장</button></div>'+
       '<div class="block"><h4>화면 밝기</h4><div class="chips" id="thmChips">'+THEMES.map(function(t){
         return '<button class="chip" type="button" data-v="'+t[0]+'" aria-pressed="'+(cur===t[0])+'">'+t[1]+'</button>'; }).join("")+'</div></div>'+
       '<div class="block"><h4>접속 권한</h4>'+
-        '<div class="kv"><span class="k">현재</span><span class="v" style="font-family:var(--font-ui)">'+(role==="admin"?"관리 (선생님)":role==="record"?"기록 (오늘 입력만)":"확인 중…")+'</span></div>'+
+        '<div class="kv"><span class="k">현재</span><span class="v" style="font-family:var(--font-ui)">'+(role==="admin"?"담당 선생님":"확인 중…")+'</span></div>'+
         '<button class="btn wide" type="button" id="wPin">PIN 다시 입력</button></div>'+
     '</div>');
   $("wYes").onclick=function(){
@@ -1228,11 +1241,11 @@ function askWho(){
 function askPin(wrong){
   var d=$("lock");
   $("lockIn").innerHTML=
-    '<div class="sheet-h"><div><h3>PIN 입력</h3><div class="sm">담당 선생님께 안내받은 번호를 입력하세요</div></div></div>'+
+    '<div class="sheet-h"><div><h3>관리 PIN 입력</h3><div class="sm">담당 선생님만 들어올 수 있습니다</div></div></div>'+
     '<div class="sheet-b">'+
     (wrong ? '<p class="note" style="color:var(--crit)">PIN이 맞지 않습니다. 다시 확인해 주세요.</p>' : "")+
     '<div><label class="fl" for="pinIn">PIN</label><input class="inp" id="pinIn" type="password" inputmode="numeric" autocomplete="off" placeholder="숫자 입력"></div>'+
-    '<p class="note">회장단은 <b>기록 PIN</b>, 담당 선생님은 <b>관리 PIN</b>을 넣으세요. 부원은 선생님께 받은 <b>개인 링크</b>로 들어오면 PIN 없이 자기 시간을 볼 수 있습니다.</p>'+
+    '<p class="note">봉사시간 입력은 담당 선생님만 합니다. 부원은 선생님께 받은 <b>개인 링크</b>로 자기 시간을 <b>보기만</b> 할 수 있습니다.</p>'+
     '<button class="btn primary wide" type="button" id="pinYes">들어가기</button></div>';
   if(!d.open) d.showModal();
   var i=$("pinIn"); setTimeout(function(){ i.focus(); },80);
@@ -1300,7 +1313,6 @@ document.addEventListener("click", function(e){
   var act=t.getAttribute("data-act");
   if(act==="fslot"){ fSlot=t.getAttribute("data-v"); renderEntry(); return; }
   if(act==="fpick"){ $("fStu").value=t.getAttribute("data-no"); renderEntry(); return; }
-  if(act==="fmin"){ $("fMin").value=t.getAttribute("data-v"); amMin=$("fMin").value; return; }
   if(act==="person"){ openPerson(t.getAttribute("data-no")); return; }
   if(act==="mclose"){ closeModal(); return; }
   if(act==="sclose"){ $("sheet").close(); return; }
@@ -1382,7 +1394,7 @@ $("tallySheet").addEventListener("click", function(){
 $("autoBtn").addEventListener("click", askAuto);
 $("fGo").addEventListener("click", doSave);
 $("fStu").addEventListener("change", renderEntry);
-$("fMin").addEventListener("input", function(){ if(fSlot==="am") amMin=this.value; });
+$("fMinSel").addEventListener("change", function(){ if(this.value){ amMin=this.value; lsSet(LS_AM, amMin); } });
 $("fMin").addEventListener("keydown", function(e){ if(e.key==="Enter") doSave(); });
 
 $("bulk").addEventListener("input", previewBulk);
