@@ -57,11 +57,14 @@ function 초기설정() {
     cs.setColumnWidth(1, 110); cs.setColumnWidth(2, 200); cs.setColumnWidth(3, 480);
     cs.setFrozenRows(1);
   }
-  addCfg_(cs, '관리PIN', '', '담당 선생님만 아는 번호. 봉사시간 입력·수정은 이 번호로 들어온 선생님만 할 수 있습니다. 비워두면 앱이 열리지 않습니다.');
+  addCfg_(cs, '관리PIN', '', '담당 선생님만 아는 번호. 혼자쓰기를 끄면 이 번호로 들어온 선생님만 입력·수정할 수 있습니다. (혼자쓰기 동안에는 쓰이지 않습니다)');
   addCfg_(cs, '학교명', '', '앱 위쪽에 표시할 이름 (선택)');
   addCfg_(cs, '급식지도분', DEF_PM, '점심 급식지도 한 번에 인정하는 시간(분). 아침 교통지도는 앱에서 입력할 때마다 시간을 넣습니다.');
   addCfg_(cs, '학기시작', '', '이번 학기 첫날 (예: 2026-08-17). 비워두면 1학기 3/1~8/15, 2학기 8/16~2월 말로 계산합니다.');
   addCfg_(cs, '학기종료', '', '이번 학기 마지막 날 (예: 2027-02-12)');
+  addCfg_(cs, '혼자쓰기', '예', '"예" 면 PIN 없이 바로 들어오고, 입력자는 아래 [고정입력자] 이름으로 남습니다. 앱 주소를 아는 사람은 누구나 입력할 수 있으니 주소를 공유하지 마세요. 이 동안 부원 개인 조회 링크는 쓰지 않습니다. 비우면 관리PIN을 묻습니다.');
+  addCfg_(cs, '고정입력자', '강구탁', '혼자쓰기일 때 기록에 남길 입력자 이름');
+  addCfg_(cs, '화면밝기', '밝게', '"밝게" 면 휴대폰이 어두운 모드여도 밝은 화면으로 고정하고, 내 설정의 밝기 고르는 칸을 숨깁니다. 비우면 각자 고릅니다.');
   addCfg_(cs, '시간계산', '내림', '누계 분을 결재용 시간으로 바꾸는 방법: 내림(5시간 50분 → 5시간) · 반올림 · 그대로(5.8시간)');
   ss.setSpreadsheetTimeZone('Asia/Seoul');
   bumpRev_();
@@ -70,7 +73,8 @@ function 초기설정() {
   SpreadsheetApp.getUi().alert(
     '시트를 준비했습니다.\n\n' +
     '다음 순서로 진행하세요.\n' +
-    '1) [설정] 시트에서 관리PIN을 정합니다. 선생님만 아는 번호로 하세요. (점심 급식지도는 1회 ' + DEF_PM + '분으로 들어가 있습니다)\n' +
+    '1) [설정] 시트를 확인합니다. 혼자쓰기 "예" · 고정입력자 · 화면밝기 "밝게" 가 들어가 있어 PIN 없이 바로 씁니다.\n' +
+    '   (점심 급식지도는 1회 ' + DEF_PM + '분. 여럿이 쓰실 때는 혼자쓰기를 비우고 관리PIN을 정하세요)\n' +
     '2) 오른쪽 위 [배포] → [새 배포] → 유형 [웹 앱]\n' +
     '   · 다음 사용자로 실행: 나\n' +
     '   · 액세스 권한이 있는 사용자: 모든 사용자\n' +
@@ -145,11 +149,16 @@ function seed_(e) {
 function api(p) {
   p = p || {};
   try {
+    var cfg = config_();
+    // 혼자쓰기 동안에는 부원 링크를 받지 않습니다 (링크에 앱 주소가 들어 있어 학생이 선생님 화면을 열 수 있기 때문)
+    if (solo_(cfg) && String(p.code || '').trim()) return { ok: false, err: 'SOLO' };
     var who = identify_(p);
     if (!who) {
       if (String(p.code || '').trim()) return { ok: false, err: 'CODE' };
       return { ok: false, err: pinSet_() ? 'PIN' : 'NOPIN' };
     }
+    // 혼자쓰기: 입력자는 언제나 고정입력자 이름
+    if (who.name) p.by = who.name;
     // 입력·수정은 관리PIN으로 들어온 선생님만. 부원 링크는 자기 기록 보기만 됩니다.
     var admin = who.role === 'admin';
     switch (p.op) {
@@ -161,7 +170,7 @@ function api(p) {
       case 'm_bulk':    return admin ? ok_(memberBulk_(p.list || [])) : deny_();
       case 'm_state':   return admin ? ok_(memberState_(p)) : deny_();
       case 'm_del':     return admin ? ok_(memberDel_(normNo_(p.no))) : deny_();
-      case 'code_gen':  return admin ? ok_(codeGen_(p)) : deny_();
+      case 'code_gen':  return !admin ? deny_() : solo_(cfg) ? { ok: false, err: 'ERR', message: '혼자쓰기 동안에는 부원 개인 조회 링크를 만들지 않습니다.' } : ok_(codeGen_(p));
       case 'cfg_set':   return admin ? ok_(cfgSet_(p)) : deny_();
       case 'tally':     return admin ? ok_(tally_(p)) : deny_();
       case 'backup':    return admin ? ok_({ id: 백업사본() }) : deny_();
@@ -179,8 +188,11 @@ function deny_() { return { ok: false, err: 'ROLE', message: '담당 선생님(�
  * 누가 들어왔는지
  *  · 개인코드(?c=…) 가 부원 시트에 있으면 → 그 부원 본인 (자기 기록만 봅니다)
  *  · 아니면 관리PIN 이 맞으면 → 담당 선생님
+ *  · 혼자쓰기 "예" 면 PIN 없이 담당 선생님 (입력자는 고정입력자)
  */
 function identify_(p) {
+  var cfg = config_();
+  if (solo_(cfg)) return { role: 'admin', name: soloName_(cfg) };
   var code = String(p.code || '').trim().toUpperCase();
   if (code) {
     var mem = readMembers_(ss_());
@@ -205,6 +217,20 @@ function auth_(pin) {
 
 function pinSet_() { return !!String(config_()['관리PIN'] || '').trim(); }
 
+/* ── 선생님 혼자 쓰기 (설정 시트의 칸을 비우면 원래대로 돌아갑니다) ── */
+
+/** 혼자쓰기 — PIN을 묻지 않고 바로 들어오며, 입력자는 '고정입력자' 이름으로 남습니다 */
+function solo_(cfg) {
+  return /^(예|y|yes|on|true|1|사용)$/i.test(String((cfg || config_())['혼자쓰기'] || '').trim());
+}
+function soloName_(cfg) {
+  return String((cfg || config_())['고정입력자'] || '').trim().slice(0, 40);
+}
+/** '밝게' 로 적어두면 밝은 화면으로 고정합니다 */
+function lightOnly_(cfg) {
+  return String((cfg || config_())['화면밝기'] || '').trim() === '밝게';
+}
+
 /* ─────────────────────────── 읽기 ─────────────────────────── */
 
 function bootAdmin_() {
@@ -223,6 +249,9 @@ function bootAdmin_() {
     sheetUrl: ss.getUrl(),
     appUrl: appUrl_(),
     pin: String(cfg['관리PIN'] || '').trim(),
+    solo: solo_(cfg),
+    me: solo_(cfg) ? soloName_(cfg) : '',
+    lightOnly: lightOnly_(cfg),
     rev: rev_()
   };
 }
@@ -239,6 +268,7 @@ function bootMember_(who) {
     acts: readActs_(ss).filter(function (a) { return a.no === who.no; }).map(packAct_),
     cfg: cfgOut_(cfg, today),
     today: today,
+    lightOnly: lightOnly_(cfg),
     rev: rev_()
   };
 }

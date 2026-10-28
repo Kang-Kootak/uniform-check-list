@@ -326,6 +326,8 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
 (function(){
   try{
     var t=JSON.parse(localStorage.getItem("jachi.theme")||'""');
+    var c=JSON.parse(localStorage.getItem("jachi.cache.v2")||"null");
+    if(c && c.light) t="light";   // 설정 시트에서 밝게 고정
     if(t==="light"||t==="dark") document.body.setAttribute("data-app-theme", t);
   }catch(e){}
 })();
@@ -419,7 +421,8 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
       <div class="card"><ul class="list" id="memList"></ul></div>
 
       <div class="sect-h"><h2>부원 개인 조회 링크</h2></div>
-      <div class="card pad stack">
+      <div class="card pad" id="linkOff" hidden><p class="note"><b>혼자쓰기</b> 동안에는 부원 개인 조회 링크를 쓰지 않습니다. 링크에 앱 주소가 들어 있어, 학생이 링크 끝을 지우면 선생님 화면이 열리기 때문입니다. 학생 확인이 필요하면 <b>누계 탭 → 표 복사</b>나 누계 시트를 보여 주세요.</p></div>
+      <div class="card pad stack" id="linkOn">
         <p class="note">부원마다 <b>자기 봉사시간만</b> 볼 수 있는 링크를 줍니다. PIN이 필요 없고, 다른 부원의 기록은 보이지 않습니다.</p>
         <p class="note" id="codeState"></p>
         <div class="btnrow">
@@ -507,7 +510,7 @@ var POLL_MS=20000, IDLE_MS=15*60*1000;
 /* ============ 상태 ============ */
 var members=new Map(), sched=[], acts=[];
 var CFG={school:"", pm:20, round:"내림", from:"", to:"", termName:"", termSet:false};
-var role=null, sheetUrl="", appUrl="", PIN="", rev=0, booted=false, meInfo=null;
+var role=null, sheetUrl="", appUrl="", PIN="", soloMode=false, soloName="", lightOnly=false, rev=0, booted=false, meInfo=null;
 var tab="today", day=null, fSlot=new Date().getHours()<11?"am":"pm", amMin=lsGet(LS_AM,""), period="term", sortBy="no", rFrom="", rTo="", meAll=false;
 var busy=new Set(), inflight=0, lastAct=Date.now(), nameLock=false;
 
@@ -522,7 +525,8 @@ function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
 /* 주소에 실어 보낸 값 — 서버가 doGet 에서 채워 넣습니다 (…/exec?c=… 또는 ?pin=…&by=…) */
 var SEED = {pin:"", by:"", code:""};
 /*__SEED__*/
-function me(){ return lsGet(LS_ME,"") || SEED.by || ""; }
+/* 혼자쓰기면 설정 시트의 고정입력자 이름을 씁니다 */
+function me(){ return (soloMode && soloName) || lsGet(LS_ME,"") || SEED.by || ""; }
 function getPin(){ return lsGet(LS_PIN,"") || SEED.pin || ""; }
 /* 개인 링크는 주소에 든 코드가 먼저 — 다른 부원의 링크를 열면 그 사람으로 바뀝니다 */
 function getCode(){ return SEED.code || lsGet(LS_CODE,"") || ""; }
@@ -588,6 +592,7 @@ function call(op, extra){
         if(r && r.err==="PIN") askPin(!!getPin());
         if(r && r.err==="CODE") codeGone();
         if(r && r.err==="NOPIN") noPin();
+        if(r && r.err==="SOLO") soloLink();
         rej(r||{err:"ERR"});
       })
       .withFailureHandler(function(e){
@@ -606,6 +611,7 @@ function errMsg(e){
   if(e.err==="PIN") return "PIN이 맞지 않습니다.";
   if(e.err==="CODE") return "이 링크는 더 이상 쓰지 않습니다.";
   if(e.err==="NOPIN") return "관리 PIN이 아직 정해지지 않았습니다.";
+  if(e.err==="SOLO") return "개인 조회 링크는 지금 쓰지 않습니다.";
   if(e.err==="ROLE") return "관리 PIN이 필요한 기능입니다.";
   if(e.err==="NET") return "인터넷 연결을 확인하고 다시 시도해 주세요.";
   return e.message || "요청을 처리하지 못했습니다.";
@@ -623,13 +629,15 @@ function applyBoot(d){
   } else {
     meInfo=null;
     sheetUrl=d.sheetUrl||""; appUrl=d.appUrl||""; PIN=d.pin||"";
+    soloMode=!!d.solo; soloName=d.me||"";
     members=new Map();
     (d.members||[]).forEach(function(m){ members.set(m.no, m); });
   }
+  lightOnly=!!d.lightOnly; applyTheme();
   booted=true;
   if(CFG.school) $("brand").innerHTML='<span class="tick">'+esc(CFG.school)+'</span> 자치회 봉사';
   // 다음에 열 때 서버 답을 기다리지 않고 바로 그리도록 (관리자의 지난 기록은 최근 것만)
-  lsSet(LS_CACHE, {role:role, cfg:CFG, sched:sched, me:meInfo, members:d.members||[],
+  lsSet(LS_CACHE, {role:role, cfg:CFG, sched:sched, me:meInfo, members:d.members||[], solo:soloMode, soloName:soloName, light:lightOnly,
     acts: role==="admin" ? acts.filter(function(a){ return a.d>=addDays(todayKey(),-14); }) : acts, at:Date.now()});
   applyRole();
   render();
@@ -640,11 +648,12 @@ function loadCache(){
   if(!c) return;
   role=c.role||null; if(c.cfg) CFG=c.cfg;
   sched=c.sched||[]; acts=c.acts||[]; meInfo=c.me||null;
+  soloMode=!!c.solo; soloName=c.soloName||""; lightOnly=!!c.light;   // 서버 답이 오기 전까지는 지난번 설정을 따른다
   (c.members||[]).forEach(function(m){ members.set(m.no, m); });
 }
 function refresh(silent){
   return call("boot").then(applyBoot, function(e){
-    if(!silent && e.err!=="PIN" && e.err!=="CODE" && e.err!=="NOPIN") toast(errMsg(e));
+    if(!silent && ["PIN","CODE","NOPIN","SOLO"].indexOf(e.err)<0) toast(errMsg(e));
   });
 }
 function applyRole(){
@@ -999,8 +1008,13 @@ function renderAdmin(){
   var c=$("accessCard");
   c.innerHTML =
     '<div class="kv"><span class="k">앱 주소</span><span class="v" style="font-size:12px">'+esc(appUrl||"배포 후 표시됩니다")+'</span></div>'+
-    '<div class="kv"><span class="k">관리 PIN</span><span class="v">'+esc(PIN||"없음")+'</span></div>'+
-    '<p class="note" style="margin-top:8px">생활기록부에 올라갈 시간이라 <b>관리 PIN을 아는 선생님만</b> 입력·수정할 수 있습니다. 학생에게는 PIN을 알려주지 마세요. PIN은 스프레드시트 <b>설정</b> 시트에서 바꿉니다.</p>';
+    (soloMode
+      ? '<div class="kv"><span class="k">들어오는 방법</span><span class="v" style="font-family:var(--font-ui)">혼자쓰기 · PIN 없음</span></div>'+
+        '<div class="kv"><span class="k">입력자</span><span class="v" style="font-family:var(--font-ui)">'+esc(soloName||"(이름 없음)")+'</span></div>'+
+        '<p class="note" style="margin-top:8px;color:var(--warn)"><b>앱 주소를 아는 사람은 누구나 입력할 수 있습니다.</b> 주소를 학생에게 알려주거나 공유하지 마세요. 여럿이 쓰실 때는 스프레드시트 <b>설정</b> 시트의 <b>혼자쓰기</b> 칸을 비우고 관리PIN을 정하세요.</p>'
+      : '<div class="kv"><span class="k">관리 PIN</span><span class="v">'+esc(PIN||"없음")+'</span></div>'+
+        '<p class="note" style="margin-top:8px">생활기록부에 올라갈 시간이라 <b>관리 PIN을 아는 선생님만</b> 입력·수정할 수 있습니다. 학생에게는 PIN을 알려주지 마세요. PIN은 스프레드시트 <b>설정</b> 시트에서 바꿉니다.</p>');
+  $("linkOn").hidden=soloMode; $("linkOff").hidden=!soloMode;
   if(sheetUrl) $("sheetLink").href=sheetUrl;
 
   var all=Array.from(members.values()).sort(function(a,b){ return cmpNo(a.no,b.no); });
@@ -1012,7 +1026,7 @@ function renderAdmin(){
       '<span class="r"><b style="font-weight:600'+(m.state===ST_STOP?';color:var(--muted)':'')+'">'+esc(m.name)+'</b> <span class="sid" style="font-size:11.5px;color:var(--muted)">'+esc(m.no)+'</span>'+
         (m.state===ST_STOP?' <span class="tag g">활동 중단</span>':'')+
         '<small>'+esc([m.dept, cnt[m.no] ? cnt[m.no].join(", ") : "순번 없음"].filter(Boolean).join(" · "))+'</small></span>'+
-      (m.code ? '<span class="tag ok">링크</span>' : '<span class="tag g">링크 없음</span>')+
+      (soloMode ? '' : m.code ? '<span class="tag ok">링크</span>' : '<span class="tag g">링크 없음</span>')+
     '</button></li>';
   }).join("") : '<li><div class="empty" style="width:100%"><strong>아직 부원이 없습니다</strong>위 칸에 학번과 이름을 붙여넣어 주세요.</div></li>';
 
@@ -1093,13 +1107,15 @@ function drawPerson(){
         '<span class="m">'+esc(hm(a.m))+'</span>'+
         (canMark(a.d) && !a.pending ? '<button class="fix" type="button" data-act="fix" data-id="'+esc(a.id)+'">고치기</button>' : '')+'</li>';
     }).join("")+'</ul></div>' : '<p class="note">이 기간에 남은 기록이 없습니다.</p>')+'</div>';
-  if(admin && m){
+  if(admin && m && !soloMode){
     h+='<div class="block"><h4>개인 조회 링크</h4>'+
       (m.code ? '<input class="inp" readonly id="pUrl" value="'+esc(codeUrl(m.code))+'" style="font-size:13px">'+
         '<div class="btnrow"><button class="btn" type="button" data-act="pcopy">링크 복사</button><button class="btn" type="button" data-act="pnew">새 링크로 바꾸기</button></div>'+
         '<p class="note">새 링크로 바꾸면 예전 링크는 더 이상 열리지 않습니다. 휴대폰을 잃어버렸을 때 쓰세요.</p>'
-      : '<button class="btn wide" type="button" data-act="pnew">링크 만들기</button>')+'</div>'+
-      '<div class="block"><h4>부원 관리</h4><div class="btnrow">'+
+      : '<button class="btn wide" type="button" data-act="pnew">링크 만들기</button>')+'</div>';
+  }
+  if(admin && m){
+    h+='<div class="block"><h4>부원 관리</h4><div class="btnrow">'+
         '<button class="btn" type="button" data-act="pstate">'+(m.state===ST_STOP?'활동 다시 시작':'활동 중단')+'</button>'+
         '<button class="btn danger" type="button" data-act="pdel">명단에서 삭제</button></div>'+
       '<p class="note">활동 중단은 입력 드롭다운과 순번표에서만 빠지고 누계에는 남습니다. 삭제해도 이미 남긴 활동 기록은 지워지지 않습니다.</p></div>';
@@ -1185,6 +1201,15 @@ function noPin(){
   if(!d.open) d.showModal();
   $("npRe").onclick=function(){ call("boot").then(function(data){ d.close(); applyBoot(data); askPin(false); }, function(){}); };
 }
+/** 혼자쓰기 동안 부원 링크로 들어왔을 때 */
+function soloLink(){
+  // 이 휴대폰에 예전 링크가 남아 있던 것이면(주소에는 없음) 지우고 다시 들어온다 — 선생님 휴대폰
+  if(!SEED.code){ lsDel(LS_CODE); refresh(true); return; }
+  var d=$("lock");
+  $("lockIn").innerHTML='<div class="sheet-h"><div><h3>지금은 개인 조회를 쓰지 않습니다</h3></div></div>'+
+    '<div class="sheet-b"><p class="note">봉사시간은 담당 선생님께 확인해 주세요.</p></div>';
+  if(!d.open) d.showModal();
+}
 function codeGone(){
   var d=$("lock");
   $("lockIn").innerHTML='<div class="sheet-h"><div><h3>링크를 다시 받아 주세요</h3></div></div>'+
@@ -1215,28 +1240,40 @@ function askName(){
 }
 function askWho(){
   var cur=themePref()||systemTheme();
-  modal('<div class="sheet-h"><div><h3>내 설정</h3><div class="sm">이 휴대폰에만 저장됩니다</div></div>'+
-      '<button class="close" type="button" data-act="mclose" aria-label="닫기">✕</button></div>'+
-    '<div class="sheet-b">'+
-      '<div class="block"><h4>입력자 이름</h4><input class="inp" id="whoIn" maxlength="40" value="'+esc(me())+'" placeholder="예: 김선생">'+
-        '<button class="btn primary wide" type="button" id="wYes">이름 저장</button></div>'+
-      '<div class="block"><h4>화면 밝기</h4><div class="chips" id="thmChips">'+THEMES.map(function(t){
-        return '<button class="chip" type="button" data-v="'+t[0]+'" aria-pressed="'+(cur===t[0])+'">'+t[1]+'</button>'; }).join("")+'</div></div>'+
-      '<div class="block"><h4>접속 권한</h4>'+
+  var fixedName = soloMode && soloName;
+  var nameBlock = fixedName
+    ? '<div class="block"><h4>입력자 이름</h4>'+
+        '<div class="kv"><span class="k">기록에 남는 이름</span><span class="v" style="font-family:var(--font-ui)">'+esc(soloName)+'</span></div>'+
+        '<p class="note">스프레드시트 <b>설정</b> 시트의 <b>고정입력자</b> 칸에서 바꿉니다.</p></div>'
+    : '<div class="block"><h4>입력자 이름</h4><input class="inp" id="whoIn" maxlength="40" value="'+esc(me())+'" placeholder="예: 김선생">'+
+        '<button class="btn primary wide" type="button" id="wYes">이름 저장</button></div>';
+  var themeBlock = lightOnly
+    ? '<div class="block"><h4>화면 밝기</h4>'+
+        '<div class="kv"><span class="k">고정</span><span class="v" style="font-family:var(--font-ui)">밝게</span></div>'+
+        '<p class="note">스프레드시트 <b>설정</b> 시트의 <b>화면밝기</b> 칸을 비우면 다시 고를 수 있습니다.</p></div>'
+    : '<div class="block"><h4>화면 밝기</h4><div class="chips" id="thmChips">'+THEMES.map(function(t){
+        return '<button class="chip" type="button" data-v="'+t[0]+'" aria-pressed="'+(cur===t[0])+'">'+t[1]+'</button>'; }).join("")+'</div></div>';
+  var pinBlock = soloMode
+    ? '<div class="block"><h4>접속 권한</h4>'+
+        '<div class="kv"><span class="k">현재</span><span class="v" style="font-family:var(--font-ui)">혼자쓰기 · PIN 없음</span></div>'+
+        '<p class="note">선생님 한 분이 모두 담당합니다. 설정 시트의 <b>혼자쓰기</b> 칸을 비우면 다시 관리PIN을 묻습니다.</p></div>'
+    : '<div class="block"><h4>접속 권한</h4>'+
         '<div class="kv"><span class="k">현재</span><span class="v" style="font-family:var(--font-ui)">'+(role==="admin"?"담당 선생님":"확인 중…")+'</span></div>'+
-        '<button class="btn wide" type="button" id="wPin">PIN 다시 입력</button></div>'+
-    '</div>');
-  $("wYes").onclick=function(){
+        '<button class="btn wide" type="button" id="wPin">PIN 다시 입력</button></div>';
+  modal('<div class="sheet-h"><div><h3>내 설정</h3><div class="sm">'+(soloMode ? '스프레드시트 설정 시트를 따릅니다' : '이 휴대폰에만 저장됩니다')+'</div></div>'+
+      '<button class="close" type="button" data-act="mclose" aria-label="닫기">✕</button></div>'+
+    '<div class="sheet-b">'+nameBlock+themeBlock+pinBlock+'</div>');
+  if($("wYes")) $("wYes").onclick=function(){
     var v=$("whoIn").value.trim();
     if(!v){ toast("이름을 입력해 주세요."); return; }
     lsSet(LS_ME, v); closeModal(); render(); toast("이름을 저장했습니다.");
   };
-  $("thmChips").addEventListener("click", function(e){
+  if($("thmChips")) $("thmChips").addEventListener("click", function(e){
     var b=e.target.closest(".chip"); if(!b) return;
     lsSet(LS_THEME, b.getAttribute("data-v")); applyTheme();
     Array.prototype.forEach.call(this.children, function(c){ c.setAttribute("aria-pressed", String(c===b)); });
   });
-  $("wPin").onclick=function(){ closeModal(); askPin(false); };
+  if($("wPin")) $("wPin").onclick=function(){ closeModal(); askPin(false); };
 }
 function askPin(wrong){
   var d=$("lock");
@@ -1267,6 +1304,7 @@ function systemTheme(){
   catch(e){ return "light"; }
 }
 function applyTheme(){
+  if(lightOnly){ document.body.setAttribute("data-app-theme", "light"); return; }   // 설정 시트에서 밝게 고정
   var t=themePref();
   if(t) document.body.setAttribute("data-app-theme", t); else document.body.removeAttribute("data-app-theme");
 }
