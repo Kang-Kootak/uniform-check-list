@@ -167,7 +167,7 @@ textarea.inp{min-height:132px;resize:vertical;font-family:var(--font-mono);font-
 .datepick{position:relative;flex:none}
 .datepick input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
 
-/* ---------- 오늘: 순번 카드 ---------- */
+/* ---------- 입력 내역 카드 ---------- */
 .slot{overflow:hidden}
 .slot-h{display:flex;align-items:center;gap:10px;padding:13px 14px 11px;border-bottom:1px solid var(--line-2)}
 .slot-h .ic{flex:none;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
@@ -196,7 +196,6 @@ select.inp{background-image:linear-gradient(45deg,transparent 50%,var(--muted) 5
 .minrow .inp{width:120px;font-family:var(--font-mono);font-size:18px;font-weight:600;text-align:right}
 .minrow span{font-size:14px;color:var(--muted)}
 .minrow select.inp{width:190px;text-align:left;font-family:var(--font-ui);font-size:16px}
-.picks .chip{padding:6px 11px;font-size:12.5px}
 #entry.locked{opacity:.55;pointer-events:none}
 
 /* ---------- 누계 ---------- */
@@ -212,19 +211,6 @@ select.inp{background-image:linear-gradient(45deg,transparent 50%,var(--muted) 5
 .trow .hrs span{font-size:11.5px;color:var(--ok);font-weight:600}
 .trow.zero{opacity:.6}
 .trow.stop .who2 b{color:var(--muted)}
-
-/* ---------- 순번 ---------- */
-.day{padding:12px 14px}
-.day-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.day-h b{font-size:16px;font-weight:600}
-.day-line{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px dashed var(--line-2)}
-.day-line .k{flex:none;width:58px;font-size:12px;font-weight:600;color:var(--muted);padding-top:4px}
-.day-line .v{flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:5px}
-.nchip{font-size:13px;padding:3px 9px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line-2)}
-.nchip.none{color:var(--muted);background:none;border-style:dashed}
-.day-line .ed{flex:none;background:none;border:1px solid var(--line);border-radius:8px;color:var(--muted);
-  font-size:12px;padding:4px 9px;cursor:pointer}
-.day.today{border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
 
 /* ---------- 목록 ---------- */
 .list li{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line-2)}
@@ -359,8 +345,7 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
       <div class="card pad stack" id="entry">
         <div><label class="fl">구분</label><div class="seg2" id="slotChips"></div></div>
         <div><label class="fl" for="fStu">학생</label>
-          <select class="inp" id="fStu"></select>
-          <div class="chips picks" id="fPlan" hidden></div></div>
+          <select class="inp" id="fStu"></select></div>
         <div><label class="fl" for="fMin" id="fMinLbl">봉사 시간</label>
           <div class="minrow"><select class="inp" id="fMinSel" hidden></select><input class="inp" id="fMin" type="number" inputmode="numeric" min="1" max="600" placeholder="분"><span id="fMinUnit">분</span></div>
           <p class="note" id="fMinNote" style="margin-top:6px"></p></div>
@@ -387,16 +372,6 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
         <button class="btn" id="tallyCopy" type="button">표 복사 (엑셀용)</button>
       </div>
       <p class="note">결재 서류에는 <b>누계</b> 시트를 그대로 인쇄하거나, 표를 복사해 엑셀에 붙여 쓰시면 됩니다. 인정 시간은 <span id="roundNote">내림</span>으로 계산합니다. (관리 → 봉사 시간 설정에서 바꿉니다)</p>
-    </section>
-
-    <!-- 순번표 -->
-    <section class="view" id="view-sched" hidden>
-      <div class="banner info" id="schedInfo"><span><b>선택 기능</b>입니다. 요일마다 설 부원을 정해 두면 <b>입력</b> 화면에서 그날 순번 학생을 버튼으로 바로 고를 수 있습니다. 순번표를 바꿔도 이미 입력한 기록은 그대로입니다.</span></div>
-      <div class="btnrow" data-admin>
-        <button class="btn" id="autoBtn" type="button">자동으로 나누기</button>
-      </div>
-      <div id="days" class="stack"></div>
-      <div class="card pad" id="unassigned" data-admin hidden></div>
     </section>
 
     <!-- 관리 -->
@@ -472,9 +447,6 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
     <button class="tab" data-tab="tally" role="tab" aria-selected="false" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>누계
     </button>
-    <button class="tab" data-tab="sched" role="tab" aria-selected="false" type="button">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg>순번
-    </button>
     <button class="tab" data-tab="admin" role="tab" aria-selected="false" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"></circle><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"></path><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21 20c0-2.6-1.6-4.8-4-5.6"></path></svg>관리
     </button>
@@ -492,7 +464,6 @@ dialog.center .sheet{border-radius:18px;margin:auto;animation:none;border-bottom
 
 /* ============ 상수 ============ */
 var WD = ["일","월","화","수","목","금","토"];
-var DAYS = ["월","화","수","목","금"];
 var SLOTS = ["am","pm"];
 var SLOT_NAME = {am:"아침 교통지도", pm:"점심 급식지도"};
 var SLOT_SHORT = {am:"교통", pm:"급식"};
@@ -508,7 +479,7 @@ var AM_STEP=5, AM_MAX=120;   // 아침 교통지도는 5분 단위
 var POLL_MS=20000, IDLE_MS=15*60*1000;
 
 /* ============ 상태 ============ */
-var members=new Map(), sched=[], acts=[];
+var members=new Map(), acts=[];
 var CFG={school:"", pm:20, round:"내림", from:"", to:"", termName:"", termSet:false};
 var role=null, sheetUrl="", appUrl="", PIN="", soloMode=false, soloName="", lightOnly=false, rev=0, booted=false, meInfo=null;
 var tab="today", day=null, fSlot=new Date().getHours()<11?"am":"pm", amMin=lsGet(LS_AM,""), period="term", sortBy="no", rFrom="", rTo="", meAll=false;
@@ -550,7 +521,6 @@ function keyOf(d){ return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.ge
 function todayKey(){ return keyOf(new Date()); }
 function dateOf(k){ var p=k.split("-"); return new Date(+p[0], +p[1]-1, +p[2]); }
 function addDays(k,n){ var d=dateOf(k); d.setDate(d.getDate()+n); return keyOf(d); }
-function wdOf(k){ return WD[dateOf(k).getDay()]; }
 function isSchoolDay(k){ var g=dateOf(k).getDay(); return g>=1 && g<=5; }
 function fmtDay(k){ var d=dateOf(k); return (d.getMonth()+1)+"월 "+d.getDate()+"일 ("+WD[d.getDay()]+")"; }
 function fmtShort(k){ var d=dateOf(k); return d.getFullYear()+"."+pad2(d.getMonth()+1)+"."+pad2(d.getDate()); }
@@ -622,7 +592,6 @@ function applyBoot(d){
   role=d.role; rev=d.rev||0;
   if(d.cfg) CFG=d.cfg;
   acts=d.acts||[];
-  sched=d.sched||[];
   if(role==="member"){
     meInfo=d.me||null;
     members=new Map();
@@ -637,7 +606,7 @@ function applyBoot(d){
   booted=true;
   if(CFG.school) $("brand").innerHTML='<span class="tick">'+esc(CFG.school)+'</span> 자치회 봉사';
   // 다음에 열 때 서버 답을 기다리지 않고 바로 그리도록 (관리자의 지난 기록은 최근 것만)
-  lsSet(LS_CACHE, {role:role, cfg:CFG, sched:sched, me:meInfo, members:d.members||[], solo:soloMode, soloName:soloName, light:lightOnly,
+  lsSet(LS_CACHE, {role:role, cfg:CFG, me:meInfo, members:d.members||[], solo:soloMode, soloName:soloName, light:lightOnly,
     acts: role==="admin" ? acts.filter(function(a){ return a.d>=addDays(todayKey(),-14); }) : acts, at:Date.now()});
   applyRole();
   render();
@@ -647,7 +616,7 @@ function loadCache(){
   var c=lsGet(LS_CACHE,null);
   if(!c) return;
   role=c.role||null; if(c.cfg) CFG=c.cfg;
-  sched=c.sched||[]; acts=c.acts||[]; meInfo=c.me||null;
+  acts=c.acts||[]; meInfo=c.me||null;
   soloMode=!!c.solo; soloName=c.soloName||""; lightOnly=!!c.light;   // 서버 답이 오기 전까지는 지난번 설정을 따른다
   (c.members||[]).forEach(function(m){ members.set(m.no, m); });
 }
@@ -671,7 +640,7 @@ function applyRole(){
 function render(){
   renderWho();
   if(role==="member"){ renderMe(); return; }
-  renderToday(); renderSched();
+  renderToday();
   if(role==="admin"){ renderTally(); renderAdmin(); }
 }
 function renderNow(){
@@ -691,10 +660,6 @@ function canMark(k){ return role==="admin" && k<=todayKey(); }
 function actOf(k, slot, no){
   for(var i=0;i<acts.length;i++){ var a=acts[i]; if(a.d===k && a.s===slot && a.no===no) return a; }
   return null;
-}
-function assigned(wd, slot){
-  return sched.filter(function(x){ return x.day===wd && x.slot===slot; })
-    .map(function(x){ return x.no; }).sort(cmpNo);
 }
 /** 아침 교통지도 시간 — 이번에 넣은 값, 없으면 그날(또는 가장 최근) 아침 입력에서 가져온다 */
 function guessAm(){
@@ -740,13 +705,6 @@ function renderEntry(){
       return '<option value="'+esc(m.no)+'">'+esc(m.no+"  "+m.name)+(m.dept?' ('+esc(m.dept)+')':'')+(a?'  ✓ '+esc(hm(a.m)):'')+'</option>';
     }).join("");
   sel.value = keep && members.has(keep) ? keep : "";
-  // 순번표를 정해 두었으면 그날 순번 학생을 버튼으로
-  var plan=(isSchoolDay(day) ? assigned(wdOf(day), fSlot) : []).filter(function(no){ return members.has(no) && !actOf(day, fSlot, no); });
-  var box=$("fPlan");
-  box.hidden=!plan.length;
-  box.innerHTML = plan.length ? '<span class="note" style="align-self:center">순번</span>'+plan.map(function(no){
-    return '<button class="chip" type="button" data-act="fpick" data-no="'+esc(no)+'" aria-pressed="'+(sel.value===no)+'">'+esc(memName(no))+'</button>';
-  }).join("") : "";
   // 시간 — 점심은 설정값(숫자 칸), 아침은 선생님이 5분 단위로 고르는 드롭다운
   var am=fSlot==="am", inp=$("fMin"), msel=$("fMinSel");
   inp.hidden=am; $("fMinUnit").hidden=am; msel.hidden=!am;
@@ -882,126 +840,6 @@ function tallyTSV(){
   return out.join("\n");
 }
 
-/* ---------- 순번표 ---------- */
-function renderSched(){
-  var admin=role==="admin", t=todayKey(), twd=isSchoolDay(t)?wdOf(t):"";
-  $("days").innerHTML = DAYS.map(function(d){
-    return '<div class="card day'+(d===twd?' today':'')+'">'+
-      '<div class="day-h"><b>'+d+'요일</b>'+(d===twd?'<span class="tag ok">오늘</span>':'')+'</div>'+
-      SLOTS.map(function(slot){
-        var nos=assigned(d, slot);
-        return '<div class="day-line"><span class="k">'+(slot==="am"?"아침 교통":"점심 급식")+'</span>'+
-          '<span class="v">'+(nos.length ? nos.map(function(no){ return '<span class="nchip">'+esc(memName(no))+'</span>'; }).join("") : '<span class="nchip none">비어 있음</span>')+'</span>'+
-          (admin ? '<button class="ed" type="button" data-act="sched" data-day="'+d+'" data-slot="'+slot+'">고치기</button>' : '')+
-        '</div>';
-      }).join("")+
-    '</div>';
-  }).join("");
-  if(admin){
-    var cnt={}; sched.forEach(function(x){ cnt[x.no]=(cnt[x.no]||0)+1; });
-    var none=Array.from(members.values()).filter(function(m){ return m.state!==ST_STOP && !cnt[m.no]; }).sort(function(a,b){ return cmpNo(a.no,b.no); });
-    var box=$("unassigned");
-    box.hidden = !members.size;
-    box.innerHTML = none.length
-      ? '<div class="block"><h4>순번이 없는 부원 '+none.length+'명</h4><div class="v" style="display:flex;flex-wrap:wrap;gap:5px">'+none.map(function(m){ return '<span class="nchip">'+esc(m.name)+'</span>'; }).join("")+'</div></div>'
-      : '<p class="note">활동 중인 부원 모두 순번이 있습니다.</p>';
-  }
-}
-function saveSched(next, msg){
-  var prev=sched;
-  sched=next; renderSched(); renderToday();
-  return call("sched_set", {rows:next}).then(function(){ toast(msg||"순번표를 저장했습니다."); }, function(e){
-    sched=prev; renderSched(); renderToday(); toast(errMsg(e));
-  });
-}
-function askSchedCell(d, slot){
-  var pick=new Set(assigned(d, slot));
-  var cnt={}; sched.forEach(function(x){ cnt[x.no]=(cnt[x.no]||0)+1; });
-  modal('<div class="sheet-h"><div><h3>'+d+'요일 '+SLOT_NAME[slot]+'</h3><div class="sm">설 부원을 고르세요</div></div>'+
-      '<button class="close" type="button" data-act="mclose" aria-label="닫기">✕</button></div>'+
-    '<div class="sheet-b">'+
-      '<input class="inp" id="scQ" placeholder="이름 · 초성 · 학번" autocomplete="off">'+
-      '<div class="pickbox" id="scList"></div>'+
-      '<p class="note" id="scN"></p>'+
-      '<button class="btn primary wide" type="button" id="scGo">저장</button>'+
-    '</div>');
-  function draw(){
-    var list=searchMembers($("scQ").value.trim()).filter(function(m){ return m.state!==ST_STOP; });
-    $("scList").innerHTML = list.length ? list.map(function(m){
-      var on=pick.has(m.no);
-      return '<button class="mrow" type="button" data-no="'+esc(m.no)+'" aria-pressed="'+on+'">'+
-        '<span class="grow"><b>'+esc(m.name)+'</b> <span class="sid">'+esc(m.no)+(m.dept?' · '+esc(m.dept):'')+'</span></span>'+
-        '<span class="tag g">주 '+(cnt[m.no]||0)+'회</span><span class="box">✓</span></button>';
-    }).join("") : '<div class="empty">'+(members.size ? '찾는 부원이 없습니다.' : '관리 탭에서 부원을 먼저 등록해 주세요.')+'</div>';
-    $("scN").textContent = pick.size+"명 선택";
-  }
-  $("scList").addEventListener("click", function(e){
-    var b=e.target.closest(".mrow"); if(!b) return;
-    var no=b.getAttribute("data-no");
-    if(pick.has(no)) pick.delete(no); else pick.add(no);
-    b.setAttribute("aria-pressed", String(pick.has(no)));
-    $("scN").textContent = pick.size+"명 선택";
-  });
-  $("scQ").addEventListener("input", draw);
-  $("scGo").onclick=function(){
-    var next=sched.filter(function(x){ return !(x.day===d && x.slot===slot); });
-    pick.forEach(function(no){ next.push({day:d, slot:slot, no:no}); });
-    closeModal();
-    saveSched(next, d+"요일 "+SLOT_SHORT[slot]+"지도 "+pick.size+"명으로 저장했습니다.");
-  };
-  draw();
-}
-var autoMode="same";
-function askAuto(){
-  var act=Array.from(members.values()).filter(function(m){ return m.state!==ST_STOP; });
-  if(!act.length){ toast("활동 중인 부원이 없습니다. 관리 탭에서 먼저 등록해 주세요."); return; }
-  var modes=[["same","하루에 아침·점심 함께"],["split","아침·점심을 다른 요일에"],["am","아침 교통지도만"],["pm","점심 급식지도만"]];
-  modal('<div class="sheet-h"><div><h3>자동으로 나누기</h3><div class="sm">활동 중인 부원 '+act.length+'명을 월~금에 고르게</div></div>'+
-      '<button class="close" type="button" data-act="mclose" aria-label="닫기">✕</button></div>'+
-    '<div class="sheet-b">'+
-      '<div class="chips" id="amChips">'+modes.map(function(m){ return '<button class="chip" type="button" data-v="'+m[0]+'" aria-pressed="'+(autoMode===m[0])+'">'+m[1]+'</button>'; }).join("")+'</div>'+
-      '<p class="note" id="amHint"></p>'+
-      '<div><label class="fl">나누는 순서</label><div class="chips" id="amOrd"><button class="chip" type="button" data-v="no" aria-pressed="true">학번순</button><button class="chip" type="button" data-v="rand" aria-pressed="false">무작위</button></div></div>'+
-      '<div class="banner"><span>지금 순번표를 <b>모두 바꿉니다.</b> 이미 남긴 기록은 그대로입니다. 나눈 뒤에도 칸마다 고칠 수 있습니다.</span></div>'+
-      '<button class="btn primary wide" type="button" id="amGo">이대로 나누기</button>'+
-    '</div>');
-  var ord="no";
-  function hint(){
-    var per=Math.ceil(act.length/5);
-    $("amHint").innerHTML = {
-      same:"부원마다 <b>한 요일</b>을 맡아 그날 아침과 점심에 모두 섭니다. 하루 약 "+per+"명.",
-      split:"부원마다 아침 하루, 점심 하루를 <b>서로 다른 요일</b>에 맡습니다. 칸마다 약 "+per+"명.",
-      am:"부원마다 한 요일 아침 교통지도만 맡습니다. 점심 순번은 비워 둡니다.",
-      pm:"부원마다 한 요일 점심 급식지도만 맡습니다. 아침 순번은 비워 둡니다."
-    }[autoMode];
-  }
-  $("amChips").addEventListener("click", function(e){
-    var b=e.target.closest(".chip"); if(!b) return;
-    autoMode=b.getAttribute("data-v");
-    Array.prototype.forEach.call(this.children, function(c){ c.setAttribute("aria-pressed", String(c===b)); });
-    hint();
-  });
-  $("amOrd").addEventListener("click", function(e){
-    var b=e.target.closest(".chip"); if(!b) return;
-    ord=b.getAttribute("data-v");
-    Array.prototype.forEach.call(this.children, function(c){ c.setAttribute("aria-pressed", String(c===b)); });
-  });
-  hint();
-  $("amGo").onclick=function(){
-    var list=act.slice().sort(function(a,b){ return cmpNo(a.no,b.no); });
-    if(ord==="rand") for(var i=list.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)), t=list[i]; list[i]=list[j]; list[j]=t; }
-    var next=[];
-    list.forEach(function(m, i){
-      var d=DAYS[i%5];
-      if(autoMode==="same"||autoMode==="am") next.push({day:d, slot:"am", no:m.no});
-      if(autoMode==="same"||autoMode==="pm") next.push({day:d, slot:"pm", no:m.no});
-      if(autoMode==="split"){ next.push({day:d, slot:"am", no:m.no}); next.push({day:DAYS[(i+2)%5], slot:"pm", no:m.no}); }
-    });
-    closeModal();
-    saveSched(next, "부원 "+list.length+"명을 월~금에 나눴습니다.");
-  };
-}
-
 /* ---------- 관리 ---------- */
 function codeUrl(code){ return (appUrl||"(앱 주소)")+"?c="+code; }
 function renderAdmin(){
@@ -1020,12 +858,11 @@ function renderAdmin(){
   var all=Array.from(members.values()).sort(function(a,b){ return cmpNo(a.no,b.no); });
   var nStop=all.filter(function(m){ return m.state===ST_STOP; }).length;
   $("memSub").textContent = all.length ? all.length+"명"+(nStop?" (중단 "+nStop+")":"") : "";
-  var cnt={}; sched.forEach(function(x){ cnt[x.no]=(cnt[x.no]||[]); cnt[x.no].push(x.day+(x.slot==="am"?"·아침":"·점심")); });
   $("memList").innerHTML = all.length ? all.map(function(m){
     return '<li><button class="mrow" type="button" data-act="person" data-no="'+esc(m.no)+'">'+
       '<span class="r"><b style="font-weight:600'+(m.state===ST_STOP?';color:var(--muted)':'')+'">'+esc(m.name)+'</b> <span class="sid" style="font-size:11.5px;color:var(--muted)">'+esc(m.no)+'</span>'+
         (m.state===ST_STOP?' <span class="tag g">활동 중단</span>':'')+
-        '<small>'+esc([m.dept, cnt[m.no] ? cnt[m.no].join(", ") : "순번 없음"].filter(Boolean).join(" · "))+'</small></span>'+
+        (m.dept ? '<small>'+esc(m.dept)+'</small>' : '')+'</span>'+
       (soloMode ? '' : m.code ? '<span class="tag ok">링크</span>' : '<span class="tag g">링크 없음</span>')+
     '</button></li>';
   }).join("") : '<li><div class="empty" style="width:100%"><strong>아직 부원이 없습니다</strong>위 칸에 학번과 이름을 붙여넣어 주세요.</div></li>';
@@ -1090,7 +927,6 @@ function drawPerson(){
   var inR=mine.filter(function(a){ return a.d>=r.from && a.d<=r.to; }).sort(function(a,b){ return a.d<b.d?1:a.d>b.d?-1:(a.s<b.s?-1:1); });
   var min=0, nAm=0, nPm=0;
   inR.forEach(function(a){ min+=a.m; if(a.s==="am") nAm++; else nPm++; });
-  var plan=sched.filter(function(x){ return x.no===no; }).sort(function(a,b){ return DAYS.indexOf(a.day)-DAYS.indexOf(b.day) || (a.slot<b.slot?-1:1); });
   var h='<div class="sheet-h"><div><h3>'+esc(nm)+'</h3><div class="sm"><span class="sid">'+esc(no)+'</span>'+(m&&m.dept?' · '+esc(m.dept):'')+(m&&m.state===ST_STOP?' · 활동 중단':'')+(!m?' · 명단에 없음':'')+'</div></div>'+
       '<button class="close" type="button" data-act="sclose" aria-label="닫기">✕</button></div>'+
     '<div class="sheet-b">';
@@ -1099,7 +935,6 @@ function drawPerson(){
       '<div class="bigcount"><b>'+esc(hm(min))+'</b><span class="credit">결재 인정 '+creditLabel(min)+'</span></div>'+
       '<p class="note">교통지도 '+nAm+'회 · 급식지도 '+nPm+'회</p></div>';
   }
-  h+='<div class="block"><h4>맡은 순번</h4><p style="font-size:14px">'+(plan.length ? plan.map(function(x){ return x.day+"요일 "+SLOT_NAME[x.slot]; }).map(esc).join("<br>") : '<span class="note">순번이 없습니다.</span>')+'</p></div>';
   h+='<div class="block"><h4>'+(admin?'활동 기록':'오늘 기록')+' '+inR.length+'건</h4>'+
     (inR.length ? '<div class="card"><ul class="list">'+inR.map(function(a){
       return '<li><span class="d">'+esc(fmtMD(a.d))+'</span><span class="r">'+SLOT_NAME[a.s]+
@@ -1118,7 +953,7 @@ function drawPerson(){
     h+='<div class="block"><h4>부원 관리</h4><div class="btnrow">'+
         '<button class="btn" type="button" data-act="pstate">'+(m.state===ST_STOP?'활동 다시 시작':'활동 중단')+'</button>'+
         '<button class="btn danger" type="button" data-act="pdel">명단에서 삭제</button></div>'+
-      '<p class="note">활동 중단은 입력 드롭다운과 순번표에서만 빠지고 누계에는 남습니다. 삭제해도 이미 남긴 활동 기록은 지워지지 않습니다.</p></div>';
+      '<p class="note">활동 중단은 입력 드롭다운에서만 빠지고 누계에는 남습니다. 삭제해도 이미 남긴 활동 기록은 지워지지 않습니다.</p></div>';
   }
   $("sheetIn").innerHTML = h+'</div>';
 }
@@ -1164,11 +999,7 @@ function renderMe(){
   var list=acts.filter(function(a){ return a.d>=from && a.d<=to; }).sort(function(a,b){ return a.d<b.d?1:a.d>b.d?-1:(a.s<b.s?-1:1); });
   var min=0, nAm=0, nPm=0;
   list.forEach(function(a){ min+=a.m; if(a.s==="am") nAm++; else nPm++; });
-  var t=todayKey(), twd=isSchoolDay(t)?wdOf(t):"";
-  var plan=sched.slice().sort(function(a,b){ return DAYS.indexOf(a.day)-DAYS.indexOf(b.day) || (a.slot<b.slot?-1:1); });
-  var todays=plan.filter(function(x){ return x.day===twd; });
   box.innerHTML=
-    (todays.length ? '<div class="banner info"><span><b>오늘은 '+todays.map(function(x){ return SLOT_NAME[x.slot]; }).join("·")+' 순번입니다.</b></span></div>' : '')+
     '<div class="card pad stack">'+
       '<div><div class="note">'+esc(meAll?"전체 기간":(CFG.termName||"이번 학기"))+(meAll?'':' · '+fmtShort(CFG.from)+' ~ '+fmtShort(CFG.to))+'</div>'+
         '<h2 style="font-size:20px;margin-top:2px">'+esc(meInfo.name)+' <span class="sid" style="font-size:13px;color:var(--muted)">'+esc(meInfo.no)+'</span></h2></div>'+
@@ -1180,10 +1011,6 @@ function renderMe(){
       '<div class="tile"><span class="n">'+nPm+'<small>회</small></span><span class="k">점심 급식지도</span></div>'+
       '<div class="tile"><span class="n">'+(nAm+nPm)+'<small>회</small></span><span class="k">모두 합쳐</span></div>'+
     '</div>'+
-    '<div class="sect-h"><h2>내 순번</h2></div>'+
-    '<div class="card pad">'+(plan.length ? plan.map(function(x){
-        return '<div class="kv"><span class="k">매주 '+x.day+'요일</span><span class="v" style="font-family:var(--font-ui)">'+SLOT_NAME[x.slot]+(x.day===twd?' <span class="tag ok">오늘</span>':'')+'</span></div>';
-      }).join("") : '<p class="note">아직 정해진 순번이 없습니다.</p>')+'</div>'+
     '<div class="sect-h"><h2>활동 기록</h2><span class="sub">'+list.length+'건</span></div>'+
     '<div class="seg"><button class="chip" type="button" data-act="meall" data-v="0" aria-pressed="'+(!meAll)+'">'+esc(CFG.termName||"이번 학기")+'</button><button class="chip" type="button" data-act="meall" data-v="1" aria-pressed="'+meAll+'">전체 기간</button></div>'+
     (list.length ? '<div class="card"><ul class="list">'+list.map(function(a){
@@ -1335,7 +1162,7 @@ function copyText(text, okMsg){
 
 /* ============ 화면 전환 ============ */
 function setView(name){
-  ["today","tally","sched","admin","me"].forEach(function(v){ $("view-"+v).hidden = v!==name; });
+  ["today","tally","admin","me"].forEach(function(v){ $("view-"+v).hidden = v!==name; });
   Array.prototype.forEach.call(document.querySelectorAll(".tab"), function(x){
     x.setAttribute("aria-selected", String(x.getAttribute("data-tab")===name));
   });
@@ -1350,13 +1177,11 @@ document.addEventListener("click", function(e){
   lastAct=Date.now();
   var act=t.getAttribute("data-act");
   if(act==="fslot"){ fSlot=t.getAttribute("data-v"); renderEntry(); return; }
-  if(act==="fpick"){ $("fStu").value=t.getAttribute("data-no"); renderEntry(); return; }
   if(act==="person"){ openPerson(t.getAttribute("data-no")); return; }
   if(act==="mclose"){ closeModal(); return; }
   if(act==="sclose"){ $("sheet").close(); return; }
   if(act==="period"){ period=t.getAttribute("data-v"); renderTally(); return; }
   if(act==="sort"){ sortBy=t.getAttribute("data-v"); renderTally(); return; }
-  if(act==="sched"){ askSchedCell(t.getAttribute("data-day"), t.getAttribute("data-slot")); return; }
   if(act==="round"){ cfgRound=t.getAttribute("data-v"); renderRound(); return; }
   if(act==="fix"){ askFix(t.getAttribute("data-id")); return; }
   if(act==="meall"){ meAll=t.getAttribute("data-v")==="1"; renderMe(); return; }
@@ -1376,14 +1201,14 @@ document.addEventListener("click", function(e){
     var m=members.get(sheetNo); if(!m) return;
     var next = m.state===ST_STOP ? "활동" : ST_STOP;
     call("m_state", {no:m.no, state:next}).then(function(){
-      toast(m.name+(next===ST_STOP?" 활동 중단 — 순번표에서도 뺐습니다.":" 활동을 다시 시작합니다."));
+      toast(m.name+(next===ST_STOP?" 활동 중단 — 입력 목록에서 뺐습니다.":" 활동을 다시 시작합니다."));
       return refresh(true);
     }, function(e){ toast(errMsg(e)); }).then(function(){ if($("sheet").open) drawPerson(); });
     return;
   }
   if(act==="pdel"){
     var md=members.get(sheetNo); if(!md) return;
-    askConfirm("명단에서 삭제", "<b>"+esc(md.name)+"</b> 부원을 명단과 순번표에서 지웁니다. 이미 남긴 활동 기록은 그대로 남아 누계에 잡힙니다.", "삭제", true).then(function(y){
+    askConfirm("명단에서 삭제", "<b>"+esc(md.name)+"</b> 부원을 명단에서 지웁니다. 이미 남긴 활동 기록은 그대로 남아 누계에 잡힙니다.", "삭제", true).then(function(y){
       if(!y) return;
       call("m_del", {no:md.no}).then(function(){ $("sheet").close(); toast(md.name+" 부원을 지웠습니다."); return refresh(true); }, function(e){ toast(errMsg(e)); });
     });
@@ -1429,7 +1254,6 @@ $("tallySheet").addEventListener("click", function(){
   }, function(e){ toast(errMsg(e)); }).then(function(){ b.disabled=false; });
 });
 
-$("autoBtn").addEventListener("click", askAuto);
 $("fGo").addEventListener("click", doSave);
 $("fStu").addEventListener("change", renderEntry);
 $("fMinSel").addEventListener("change", function(){ if(this.value){ amMin=this.value; lsSet(LS_AM, amMin); } });

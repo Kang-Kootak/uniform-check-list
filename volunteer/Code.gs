@@ -9,12 +9,10 @@
  * 자세한 순서는 저장소의 volunteer/설치_방법.md 참고.
  */
 
-var SH_M = '부원', SH_S = '순번', SH_A = '활동', SH_C = '설정', SH_T = '누계';
+var SH_M = '부원', SH_A = '활동', SH_C = '설정', SH_T = '누계';
 var HDR_M = ['학번', '이름', '학년', '반', '번호', '부서', '상태', '개인코드', '메모'];
-var HDR_S = ['요일', '구분', '학번', '이름'];
 var HDR_A = ['기록ID', '날짜', '구분', '학번', '이름', '인정분', '입력자', '입력일시', '메모'];
 var SLOT = { am: '아침 교통지도', pm: '점심 급식지도' };
-var DAYS = ['월', '화', '수', '목', '금'];
 var ST_STOP = '중단';
 var DEF_PM = 20;                    // 점심 급식지도 1회 인정 시간(분). 아침 교통지도는 입력할 때마다 넣습니다.
 var ROUNDS = ['내림', '반올림', '그대로'];
@@ -42,9 +40,6 @@ function 초기설정() {
   var ms = ensureSheet_(ss, SH_M, HDR_M);
   ms.setColumnWidth(1, 80); ms.setColumnWidth(2, 100); ms.setColumnWidth(6, 110); ms.setColumnWidth(8, 100); ms.setColumnWidth(9, 200);
   ms.getRange(2, 8, Math.max(ms.getMaxRows() - 1, 1), 1).setNumberFormat('@');   // 개인코드는 글자로
-
-  var ps = ensureSheet_(ss, SH_S, HDR_S);
-  ps.setColumnWidth(2, 130);
 
   var as = ensureSheet_(ss, SH_A, HDR_A);
   as.setColumnWidth(1, 90); as.setColumnWidth(2, 100); as.setColumnWidth(3, 130); as.setColumnWidth(8, 150); as.setColumnWidth(9, 200);
@@ -166,7 +161,6 @@ function api(p) {
       case 'boot':      return ok_(admin ? bootAdmin_() : bootMember_(who));
       case 'save':      return admin ? ok_(save_(p)) : deny_();
       case 'del':       return admin ? ok_(delAct_(p)) : deny_();
-      case 'sched_set': return admin ? ok_(schedSet_(p.rows || [])) : deny_();
       case 'm_bulk':    return admin ? ok_(memberBulk_(p.list || [])) : deny_();
       case 'm_state':   return admin ? ok_(memberState_(p)) : deny_();
       case 'm_del':     return admin ? ok_(memberDel_(normNo_(p.no))) : deny_();
@@ -242,7 +236,6 @@ function bootAdmin_() {
   return {
     role: 'admin',
     members: members,
-    sched: readSched_(ss),
     acts: readActs_(ss).map(packAct_),
     cfg: cfgOut_(cfg, today),
     today: today,
@@ -256,7 +249,7 @@ function bootAdmin_() {
   };
 }
 
-/** 부원 본인 — 자기 기록과 자기 순번만 */
+/** 부원 본인 — 자기 기록만 */
 function bootMember_(who) {
   var ss = ss_(), cfg = config_(), today = today_();
   var me = null;
@@ -264,7 +257,6 @@ function bootMember_(who) {
   return {
     role: 'member',
     me: { no: who.no, name: who.name, dept: me ? me.dept : '', state: me ? me.state : '' },
-    sched: readSched_(ss).filter(function (s) { return s.no === who.no; }),
     acts: readActs_(ss).filter(function (a) { return a.no === who.no; }).map(packAct_),
     cfg: cfgOut_(cfg, today),
     today: today,
@@ -317,26 +309,6 @@ function memberMap_(ss) {
   var map = {};
   readMembers_(ss).forEach(function (m) { map[m.no] = m; });
   return map;
-}
-
-function readSched_(ss) {
-  var sh = ss.getSheetByName(SH_S);
-  if (!sh) return [];
-  var last = sh.getLastRow();
-  if (last < 2) return [];
-  var vals = sh.getRange(2, 1, last - 1, HDR_S.length).getValues();
-  var out = [], seen = {};
-  for (var i = 0; i < vals.length; i++) {
-    var day = String(vals[i][0] || '').trim().charAt(0);
-    var slot = slotKey_(vals[i][1]);
-    var no = normNo_(vals[i][2]);
-    if (DAYS.indexOf(day) < 0 || !slot || !no) continue;
-    var k = day + slot + no;
-    if (seen[k]) continue;
-    seen[k] = true;
-    out.push({ day: day, slot: slot, no: no });
-  }
-  return out;
 }
 
 function readActs_(ss) {
@@ -449,33 +421,6 @@ function newId_() {
   return Utilities.formatDate(new Date(), tz_(), 'MMdd') + '-' + Math.random().toString(36).slice(2, 7);
 }
 
-/* ─────────────────────────── 순번표 ─────────────────────────── */
-
-/** 순번표 전체를 앱에서 보낸 것으로 바꾼다. 이미 남긴 활동 기록은 건드리지 않습니다. */
-function schedSet_(rows) {
-  return withLock_(function () {
-    var ss = ss_(), mem = memberMap_(ss);
-    var sh = ensureSheet_(ss, SH_S, HDR_S);
-    var out = [], seen = {};
-    rows.forEach(function (r) {
-      var day = String(r.day || '').charAt(0), slot = String(r.slot || ''), no = normNo_(r.no);
-      if (DAYS.indexOf(day) < 0 || !SLOT[slot] || !mem[no]) return;
-      var k = day + slot + no;
-      if (seen[k]) return;
-      seen[k] = true;
-      out.push([day, SLOT[slot], no, mem[no].name]);
-    });
-    out.sort(function (a, b) {
-      return DAYS.indexOf(a[0]) - DAYS.indexOf(b[0]) || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0) || cmpNo_(a[2], b[2]);
-    });
-    var last = sh.getLastRow();
-    if (last >= 2) sh.getRange(2, 1, last - 1, HDR_S.length).clearContent();
-    if (out.length) sh.getRange(2, 1, out.length, HDR_S.length).setValues(out);
-    bumpRev_();
-    return { total: out.length, rev: rev_() };
-  });
-}
-
 /* ─────────────────────────── 부원 ─────────────────────────── */
 
 function memberBulk_(list) {
@@ -517,7 +462,6 @@ function memberState_(p) {
     var ss = ss_(), m = memberMap_(ss)[no];
     if (!m) throw new Error('부원 명단에 없는 학번입니다.');
     sheet_(ss, SH_M).getRange(m.row, 7).setValue(state);
-    if (state === ST_STOP) dropFromSched_(ss, no);   // 활동을 멈추면 순번표에서도 뺀다
     bumpRev_();
     return { no: no, state: state };
   });
@@ -529,21 +473,9 @@ function memberDel_(no) {
     var ss = ss_(), m = memberMap_(ss)[no];
     if (!m) throw new Error('부원 명단에 없는 학번입니다.');
     sheet_(ss, SH_M).deleteRow(m.row);
-    dropFromSched_(ss, no);
     bumpRev_();
     return { no: no };
   });
-}
-
-function dropFromSched_(ss, no) {
-  var sh = ss.getSheetByName(SH_S);
-  if (!sh) return;
-  var last = sh.getLastRow();
-  if (last < 2) return;
-  var vals = sh.getRange(2, 3, last - 1, 1).getValues();
-  for (var i = vals.length - 1; i >= 0; i--) {
-    if (normNo_(vals[i][0]) === no) sh.deleteRow(i + 2);
-  }
 }
 
 function sortMembers_(sh) {
