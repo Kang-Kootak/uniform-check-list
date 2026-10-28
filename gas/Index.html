@@ -202,6 +202,9 @@ input[type="date"].inp{min-height:46px}
 /* ---------- log list ---------- */
 .log li{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-bottom:1px solid var(--line-2)}
 .log li:last-child{border-bottom:0}
+/* 눌러서 학생 상세를 열 수 있는 줄 */
+.log li[data-act="open"], .rank li[data-act="open"]{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.log li[data-act="open"]:active, .rank li[data-act="open"]:active{background:var(--surface-2)}
 .log .when{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);flex:none;width:64px;
   padding-top:2px;font-variant-numeric:tabular-nums}
 .log .who2{font-size:12px;color:var(--muted)}
@@ -1060,7 +1063,8 @@ function renderCheck(){
   var recent=logs.slice(0,12);
   $("recentSub").textContent = logs.length ? "최근 "+recent.length+"건" : "";
   $("recent").innerHTML = recent.length ? recent.map(function(r){
-    return '<li'+(r.pending?' class="pending"':'')+'>'+
+    var open = (!r.pending && students.has(r.no)) ? ' data-act="open" data-sid="'+esc(r.no)+'"' : "";
+    return '<li'+(r.pending?' class="pending"':'')+open+'>'+
       '<span class="when">'+fmtWhen(r.at)+'</span>'+
       '<div class="body"><b>'+esc(baseName(r.name))+'</b><span class="sid">'+esc(r.no)+'</span>'+
         '<div class="rsn">'+esc(r.reason)+(r.memo?" · "+esc(r.memo):"")+' <span class="who2">— '+esc(r.by)+'</span></div>'+
@@ -1131,7 +1135,7 @@ function renderStats(){
   var max=ranked.length?ranked[0].n:1;
   $("rankSub").textContent = ranked.length ? ranked.length+"명" : "";
   $("rank").innerHTML = ranked.length ? ranked.map(function(r,i){
-    return '<li>'+
+    return '<li'+(students.has(r.s.no) ? ' data-act="open" data-sid="'+esc(r.s.no)+'"' : "")+'>'+
       '<span class="pos">'+(i+1)+'</span>'+
       '<div class="bar"><div class="t"><b>'+esc(baseName(r.s.name))+'</b><span>'+esc(r.s.no)+(labelOf(r.s)?" · "+esc(labelOf(r.s)):"")+'</span></div>'+
         '<div class="track"><i class="fill '+lvl(r.n)+'" style="width:'+Math.max(6,Math.round(r.n/max*100))+'%"></i></div></div>'+
@@ -1147,7 +1151,7 @@ function renderStats(){
   $("referSub").textContent = refPool.length ? (overN?"회부 대상 "+overN+"명 · ":"")+"경고 "+(refPool.length-overN)+"명" : "";
   $("referList").innerHTML = refPool.length ? refPool.slice(0,40).map(function(s){
     var c=s.count||0, left=referLeft(c);
-    return '<li>'+
+    return '<li data-act="open" data-sid="'+esc(s.no)+'">'+
       '<div class="bar"><div class="t"><b>'+esc(baseName(s.name))+'</b>'+
         '<span>'+esc(s.no)+(labelOf(s)?" · "+esc(labelOf(s)):"")+' · 누적 '+c+'회</span></div>'+
         '<div class="track"><i class="fill '+lvl(c)+'" style="width:'+Math.min(100,Math.round(c/Math.max(TH.refer,1)*100))+'%"></i></div></div>'+
