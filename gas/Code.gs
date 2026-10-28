@@ -190,7 +190,8 @@ function api(p) {
     switch (p.op) {
       case 'rev':     return ok_({ rev: rev_() });
       case 'boot':    return ok_(boot_(role, who));
-      case 'history': return ok_({ no: normNo_(p.no), items: history_(normNo_(p.no)) });
+      case 'history': return ok_({ no: normNo_(p.no), items: history_(normNo_(p.no)),
+                                   adjusts: historyAdjusts_(normNo_(p.no)) });
       case 'add':     return ok_(addRecord_(p));
       case 'undo':    return admin ? ok_(undoRecord_(p)) : deny_();
       case 'bulk':    return admin ? ok_(bulkRoster_(p.list || [])) : deny_();
@@ -638,6 +639,31 @@ function readAdjusts_() {
     });
   }
   return out;   // 최신순
+}
+
+/**
+ * 학생 한 명의 조정 내역 전체.
+ * 종이 기록에서 옮겨온 횟수는 기록 시트에 줄이 없으므로,
+ * 상세 화면의 적발 이력에 이 내역을 함께 보여줍니다.
+ */
+function historyAdjusts_(no) {
+  if (!no) return [];
+  var js;
+  try { js = ensureAdjustSheet_(ss_()); } catch (e) { return []; }
+  var last = js.getLastRow();
+  if (last < 2) return [];
+  var vals = js.getRange(2, 1, last - 1, HDR_J.length).getValues();
+  var out = [];
+  for (var i = 0; i < vals.length; i++) {
+    if (normNo_(vals[i][2]) !== no) continue;
+    out.push({
+      id: String(vals[i][0]), at: iso_(vals[i][1]),
+      before: num_(vals[i][4]) || 0, after: num_(vals[i][5]) || 0,
+      reason: String(vals[i][6] || ''), by: String(vals[i][7] || ''), memo: String(vals[i][8] || '')
+    });
+  }
+  out.sort(function (a, b) { return (a.at || '') < (b.at || '') ? 1 : -1; });
+  return out;
 }
 
 /** 기록 시트에 남은 실제 적발 건수 */

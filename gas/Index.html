@@ -639,7 +639,7 @@ var POLL_MS=20000, IDLE_MS=15*60*1000;
 
 /* ============ 상태 ============ */
 var REASON="교복 미착용";   // 적발 사유는 이 한 가지로 통일
-var students=new Map(), logs=[], exempts=[], adjusts=[], histCache={};
+var students=new Map(), logs=[], exempts=[], adjusts=[], histCache={}, adjCache={};
 var role=null, pinSet=true, sheetUrl="", appUrl="", PINS=null, codes=[], logLimit=1000, rev=0;
 /* 설정 시트에서 내려오는 올해용 설정 — 혼자 쓰기 / 밝은 화면 고정 */
 var soloMode=false, lightOnly=false;
@@ -909,7 +909,7 @@ function applyBoot(d){
   exempts=d.exempts||[];
   adjusts=d.adjusts||[];
   if(d.thresholds && d.thresholds.refer>0) TH={warn:d.thresholds.warn, refer:d.thresholds.refer};
-  histCache={};
+  histCache={}; adjCache={};
   syncedAt=new Date().toISOString();
   booted=true;
   if(d.school) $("brand").innerHTML='<span class="tick">'+esc(d.school)+'</span> 교복 지도';
@@ -1188,6 +1188,7 @@ function openSheet(no){
   if(!histCache[no]){
     call("history",{no:no}).then(function(d){
       histCache[d.no]=d.items||[];
+      adjCache[d.no]=d.adjusts||[];
       if(sheetNo===d.no) drawSheet();
     }, function(e){
       histCache[no]=null;
@@ -1195,19 +1196,41 @@ function openSheet(no){
     });
   }
 }
+/**
+ * 적발 이력 줄 — 앱으로 기록한 건과 횟수 조정 내역을 시간순으로 합칩니다.
+ * 종이에서 옮겨온 횟수는 기록 줄이 없으므로 조정 내역으로만 남습니다.
+ */
+function histRows(s, hist, adj){
+  var out = [];
+  (hist||[]).forEach(function(e){
+    out.push({ at:e.at||"", html:
+      '<li><span class="d">'+fmtDT(e.at)+'</span>'+
+      '<span class="r">'+esc(e.reason)+(e.memo?" · "+esc(e.memo):"")+'<small>기록 '+esc(e.by)+'</small></span>'+
+      (canEdit() ? '<button class="undo" type="button" data-act="undo" data-sid="'+esc(s.no)+'" data-eid="'+esc(e.id)+'" data-at="'+esc(e.at)+'">삭제</button>' : "")+
+      '</li>' });
+  });
+  (adj||[]).forEach(function(a){
+    var d = (a.after||0) - (a.before||0);
+    out.push({ at:a.at||"", html:
+      '<li><span class="d">'+fmtDT(a.at)+'</span>'+
+      '<span class="r"><b>횟수 조정</b> '+esc(a.reason||"")+(a.memo?" · "+esc(a.memo):"")+
+        ' <span style="color:var(--muted)">'+(a.before||0)+'회 → '+(a.after||0)+'회'+
+        (d ? ' ('+(d>0?"+":"")+d+'회)' : "")+'</span>'+
+        '<small>조정 '+esc(a.by||"")+'</small></span></li>' });
+  });
+  out.sort(function(x,y){ return x.at < y.at ? 1 : (x.at > y.at ? -1 : 0); });
+  return out;
+}
 function drawSheet(err){
   var s=students.get(sheetNo);
   if(!s){ if($("sheet").open) $("sheet").close(); return; }
   var c=s.count||0, hist=histCache[sheetNo], st=statusOf(s);
+  var rows = histRows(s, hist, adjCache[sheetNo]);
   var histHtml;
   if(err) histHtml='<p class="note" style="color:var(--crit)">'+esc(err)+'</p>';
   else if(hist===undefined) histHtml='<p class="note">불러오는 중…</p>';
-  else if(!hist || !hist.length) histHtml='<p class="note">아직 적발 기록이 없습니다.</p>';
-  else histHtml='<ul class="hist">'+hist.map(function(e){
-      return '<li><span class="d">'+fmtDT(e.at)+'</span>'+
-        '<span class="r">'+esc(e.reason)+(e.memo?" · "+esc(e.memo):"")+'<small>기록 '+esc(e.by)+'</small></span>'+
-        (canEdit() ? '<button class="undo" type="button" data-act="undo" data-sid="'+esc(s.no)+'" data-eid="'+esc(e.id)+'" data-at="'+esc(e.at)+'">삭제</button>' : "")+'</li>';
-    }).join("")+'</ul>';
+  else if(!rows.length) histHtml='<p class="note">아직 적발 기록이 없습니다.</p>';
+  else histHtml='<ul class="hist">'+rows.map(function(r){ return r.html; }).join("")+'</ul>';
 
   $("sheetIn").innerHTML=
     '<div class="sheet-h"><span class="grab"></span>'+
@@ -1220,7 +1243,7 @@ function drawSheet(err){
       referNote(c, true)+
       (st ? st.html(true) : "")+
       (st ? "" : '<button class="btn primary wide" type="button" data-act="record">적발 기록하기</button>')+
-      '<div class="block"><h4>적발 이력'+(hist&&hist.length?" ("+hist.length+")":"")+'</h4>'+histHtml+'</div>'+
+      '<div class="block"><h4>적발 이력'+(rows.length?" ("+rows.length+")":"")+'</h4>'+histHtml+'</div>'+
     '</div>';
 }
 
