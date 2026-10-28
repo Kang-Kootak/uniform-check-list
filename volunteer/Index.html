@@ -506,7 +506,7 @@ var POLL_MS=20000, IDLE_MS=15*60*1000;
 
 /* ============ 상태 ============ */
 var members=new Map(), sched=[], acts=[];
-var CFG={school:"", pm:25, round:"내림", from:"", to:"", termName:"", termSet:false};
+var CFG={school:"", pm:20, round:"내림", from:"", to:"", termName:"", termSet:false};
 var role=null, sheetUrl="", appUrl="", PIN="", rev=0, booted=false, meInfo=null;
 var tab="today", day=null, fSlot=new Date().getHours()<11?"am":"pm", amMin=lsGet(LS_AM,""), period="term", sortBy="no", rFrom="", rTo="", meAll=false;
 var busy=new Set(), inflight=0, lastAct=Date.now(), nameLock=false;
